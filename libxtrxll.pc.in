@@ -1,7 +1,7 @@
 prefix=@CMAKE_INSTALL_PREFIX@
 exec_prefix=${prefix}
-libdir=${exec_prefix}/@XTRX_LIBRARY_DIR@
-includedir=${prefix}/@XTRX_INCLUDE_DIR@
+libdir=${exec_prefix}/@XTRXLL_LIBRARY_DIR@
+includedir=${prefix}/@XTRXLL_INCLUDE_DIR@
 
 Name: @CPACK_PACKAGE_NAME@
 Description: @CPACK_PACKAGE_DESCRIPTION_SUMMARY@
@@ -10,6 +10,6 @@ Version: @CPACK_PACKAGE_VERSION@
 Requires:
 Conflicts:
 Cflags: -I${includedir}
-Libs: -L${libdir} -lxtrxll_base
-Libs.private:  -lrt -lm -ldl -lxtrxll_base
+Libs: -L${libdir} -lxtrxll
+Libs.private:  -lrt -lm -ldl -lxtrxll
 

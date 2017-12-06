@@ -1,4 +1,4 @@
-project(libllxtrx C)
+project(libxtrxll C)
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 cmake_minimum_required(VERSION 2.8)
@@ -53,7 +53,7 @@ endif()
 
 set(XTRXLL_LIBRARY_DIR      lib${LIB_SUFFIX})
 set(XTRXLL_INCLUDE_DIR      include)
-set(XTRXLL_UTILS_DIR        ${XTRX_LIBRARY_DIR}/xtrxll)
+set(XTRXLL_UTILS_DIR        ${XTRXLL_LIBRARY_DIR}/xtrxll)
 
 CONFIGURE_FILE(
 	${CMAKE_CURRENT_SOURCE_DIR}/libxtrxll.pc.in
@@ -62,7 +62,7 @@ CONFIGURE_FILE(
 
 INSTALL(
 	FILES ${CMAKE_CURRENT_BINARY_DIR}/libxtrxll.pc
-	DESTINATION ${XTRX_LIBRARY_DIR}/pkgconfig)
+	DESTINATION ${XTRXLL_LIBRARY_DIR}/pkgconfig)
 
 # Report all undfined symbols in shared libraries
 if(CMAKE_COMPILER_IS_GNUCC)
