@@ -1,6 +1,6 @@
 # USB3380 module for LL
 include_directories(..)
-include_directories(${LIBUSB3380_INCLUDE_DIR})
+include_directories(${LIBUSB3380_INCLUDE_DIRS})
 
 
 add_library(xtrxll_libusb3380 SHARED xtrxll_libusb3380.c)
