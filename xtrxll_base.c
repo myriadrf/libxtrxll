@@ -76,6 +76,77 @@ static uint8_t get_voltage(int vin)
 	return r;
 }
 
+enum xtrx_power_modes {
+	XTRX_PWR_SAVE_MAX = 0,
+	XTRX_PWR_COARSE = 1,
+	XTRX_PWR_ECONOMY = 2,
+	XTRX_PWR_ECO_PLUS = 3,
+	XTRX_PWR_OPTIMAL = 4,
+	XTRX_PWR_PERF_GOOD = 5,
+	XTRX_PWR_PERF_BEST = 6,
+	XTRX_PWR_PERF_MAX = 7,
+};
+
+enum xtrx_power_out {
+	V_LMS_1V8 = 1800,
+	V_XTRX_XO = 3000 + 20,
+	V_LMS_1V4 = 1400,
+	V_LMS_1V2 = 1260,
+};
+
+enum xtrx_vio {
+	V_IO_ECO = 1500,
+	V_IO_OPT = 2000,
+	V_IO_PERF= 2700,
+	V_IO_HI  = 3300,
+};
+
+static int xtrxllr3_lms7pwr_set_mode(struct xtrxll_base_dev* dev, enum xtrx_power_modes mode)
+{
+	if (mode > XTRX_PWR_PERF_MAX)
+		return -EINVAL;
+
+	unsigned drop_voltage = 40 * (unsigned)mode;
+
+	lp8758_set(dev, I2C_BUS2, BUCK0_VOUT,  get_voltage(V_LMS_1V8 + drop_voltage));
+	lp8758_set(dev, I2C_BUS2, BUCK1_VOUT,  get_voltage(V_XTRX_XO + drop_voltage));
+	lp8758_set(dev, I2C_BUS2, BUCK2_VOUT,  get_voltage(V_LMS_1V4 + drop_voltage));
+	lp8758_set(dev, I2C_BUS2, BUCK3_VOUT,  get_voltage(V_LMS_1V2 + drop_voltage));
+	return 0;
+}
+
+static int xtrxllr3_io_set(struct xtrxll_base_dev* dev, unsigned vio_mv)
+{
+	if (vio_mv < 1400 || vio_mv > 3300)
+		return -EINVAL;
+
+	lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(vio_mv));
+	return 0;
+}
+
+
+#if 0
+static void xtrxllr3_io_set_mode(struct xtrxll_base_dev* dev, enum xtrx_power_modes mode)
+{
+	switch (mode) {
+	case XTRX_PWR_ECONOMY:
+		lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(V_IO_ECO));
+		break;
+	case XTRX_PWR_OPTIMAL:
+		lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(V_IO_OPT));
+		break;
+	case XTRX_PWR_PERFORMANCE:
+		lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(V_IO_PERF));
+		break;
+	case XTRX_PWR_HIGHEST:
+		lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(V_IO_HI));
+		break;
+	}
+}
+#endif
+
+
+
 
 static void lp8758_en(struct xtrxll_base_dev* dev, int en, int en3v3)
 {
@@ -157,6 +228,8 @@ static int xtrvxllv0_lms7_pwr_ctrl(struct xtrxll_base_dev* dev, uint32_t lmsno, 
 	if (ctrl_mask & XTRXLL_LMS7_TXEN_PIN)  powermask |= (1<<GP_PORT_LMS_CTRL_TXEN);
 	if (ctrl_mask & XTRXLL_LMS7_RX_TRXIQ)  powermask |= (1<<GP_PORT_LMS_RX_TRXIQ);
 	if (ctrl_mask & XTRXLL_LMS7_RX_GEN)    powermask |= (1<<GP_PORT_LMS_FCLK_RX_GEN);
+
+	if (ctrl_mask & XTRXLL_EXT_CLK)        powermask |= (1<<GP_PORT_XTRX_EXT_CLK) | (1<<GP_PORT_XTRX_PD_TCXO);
 
 	if ((ctrl_mask & XTRXLL_LMS7_GPWR_PIN) || (ctrl_mask & XTRXLL_DCDC_ON)) {
 		lp8758_en(dev, 1, 1);
@@ -440,7 +513,21 @@ static int xtrvxllv0_mem_rb32(struct xtrxll_base_dev* dev, uint32_t xtrx_addr,
 	return (int)mwords;
 }
 
-
+static int xtrvxllv0_set_param(struct xtrxll_base_dev* dev, unsigned paramno, unsigned param)
+{
+	switch (paramno) {
+	case XTRXLL_PARAM_CLOCK_TYPE:
+	{
+		return -EINVAL;
+	}
+	case XTRXLL_PARAM_PWR_MODE:
+		return xtrxllr3_lms7pwr_set_mode(dev, (enum xtrx_power_modes)param);
+	case XTRXLL_PARAM_PWR_VIO:
+		return xtrxllr3_io_set(dev, param);
+	default:
+		return -EINVAL;
+	}
+}
 
 const static struct xtrxll_ctrl_ops s_xtrx_base_ops = {
 	.get_cfg = xtrvxllv0_get_cfg,
@@ -461,6 +548,8 @@ const static struct xtrxll_ctrl_ops s_xtrx_base_ops = {
 
 	.mem_rb32 = xtrvxllv0_mem_rb32,
 	.mem_wr32 = xtrvxllv0_mem_wr32,
+
+	.set_param = xtrvxllv0_set_param,
 };
 
 

@@ -93,6 +93,8 @@ enum xtrxll_lms7_pwr {
 	XTRXLL_LMS7_RX_TRXIQ  = 1<<5,
 	XTRXLL_LMS7_RX_GEN    = 1<<6,
 
+	XTRXLL_EXT_CLK        = 1<<8,
+
 	XTRXLL_DCDC_ON        = 1<<16,
 };
 
@@ -121,6 +123,15 @@ enum xtrxll_sensors {
 
 XTRXLL_API int xtrxll_get_sensor(struct xtrxll_dev* dev, unsigned sensorno,
 								 int* outval);
+
+typedef enum xtrxll_params {
+	XTRXLL_PARAM_CLOCK_TYPE,
+	XTRXLL_PARAM_PWR_MODE,
+	XTRXLL_PARAM_PWR_VIO,
+} xtrxll_params_t;
+
+XTRXLL_API int xtrxll_set_param(struct xtrxll_dev* dev, unsigned paramno,
+								unsigned value);
 
 // Frone end treaming format
 typedef enum xtrxll_fe {

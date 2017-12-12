@@ -92,6 +92,7 @@ struct xtrxll_ops {
 
 	// Sensor wrapper with wait functions
 	int (*get_sensor)(struct xtrxll_base_dev* dev, unsigned sensorno, int* outval);
+	int (*set_param)(struct xtrxll_base_dev* dev, unsigned paramno, unsigned inval);
 };
 
 
@@ -146,6 +147,8 @@ struct xtrxll_ctrl_ops {
 					unsigned mwords, uint32_t* host_addr);
 	int (*mem_wr32)(struct xtrxll_base_dev* dev, uint32_t xtrx_addr,
 					unsigned mwords, const uint32_t* host_addr);
+
+	int (*set_param)(struct xtrxll_base_dev* dev, unsigned paramno, unsigned inval);
 };
 
 int xtrxll_base_fill_ctrlops(struct xtrxll_base_dev* dev, unsigned devid);

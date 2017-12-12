@@ -1404,6 +1404,12 @@ static int xtrxllusb3380v0_get_sensor(struct xtrxll_base_dev* dev,
 	return dev->ctrlops->get_sensor(dev->self, sensorno, outval);
 }
 
+static int xtrxllusb3380v0_set_param(struct xtrxll_base_dev* dev,
+									  unsigned paramno, unsigned val)
+{
+	return dev->ctrlops->set_param(dev->self, paramno, val);
+}
+
 const static struct xtrxll_ops mod_ops = {
 	.open = xtrxllusb3380v0_open,
 	.close = xtrxllusb3380v0_close,
@@ -1437,6 +1443,7 @@ const static struct xtrxll_ops mod_ops = {
 	.repeat_tx_start = xtrxllusb3380v0_repeat_tx_start,
 
 	.get_sensor = xtrxllusb3380v0_get_sensor,
+	.set_param = xtrxllusb3380v0_set_param,
 };
 
 const struct xtrxll_ops* xtrxllusb3380v0_init(unsigned abi_version)

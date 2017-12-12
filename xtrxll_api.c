@@ -270,6 +270,12 @@ int xtrxll_get_sensor(struct xtrxll_dev* dev, unsigned sensorno, int* outval)
 	return ldev->base.selfops->get_sensor(ldev->inner, sensorno, outval);
 }
 
+int xtrxll_set_param(struct xtrxll_dev* dev, unsigned paramno, unsigned value)
+{
+	struct xtrxll_dev_loader* ldev = (struct xtrxll_dev_loader*)dev;
+	return ldev->base.selfops->set_param(ldev->inner, paramno, value);
+}
+
 int xtrxll_dma_rx_init(struct xtrxll_dev* dev, int chan, unsigned buf_szs,
 					   unsigned* out_szs)
 {
