@@ -119,6 +119,9 @@ enum xtrxll_sensors {
 	XTRXLL_PMIC1_VER,
 	XTRXLL_PMIC1_ID,
 	XTRXLL_PMIC1_CTRL1,
+
+	XTRXLL_DMABUF_RXST64K, /**< RX: 0 - 65535 buffer fullness */
+	XTRXLL_DMABUF_TXST64K, /**< TX: 0 - 65535 buffer fullness */
 };
 
 XTRXLL_API int xtrxll_get_sensor(struct xtrxll_dev* dev, unsigned sensorno,

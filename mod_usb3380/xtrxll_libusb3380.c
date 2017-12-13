@@ -1403,10 +1403,22 @@ static int xtrxllusb3380v0_dma_start(struct xtrxll_base_dev* bdev, int chan,
 	return res;
 }
 
-static int xtrxllusb3380v0_get_sensor(struct xtrxll_base_dev* dev,
+static int xtrxllusb3380v0_get_sensor(struct xtrxll_base_dev* bdev,
 									  unsigned sensorno, int* outval)
 {
-	return dev->ctrlops->get_sensor(dev->self, sensorno, outval);
+	struct xtrxll_usb3380_dev* dev = (struct xtrxll_usb3380_dev*)bdev;
+
+	switch (sensorno) {
+	case XTRXLL_DMABUF_RXST64K:
+		*outval = (RXDMA_BUFFERS - dev->rx_buf_available) * 65536 / RXDMA_BUFFERS;
+		return 0;
+	case XTRXLL_DMABUF_TXST64K:
+		sem_getvalue(&dev->tx_buf_available, outval);
+		*outval = (TXDMA_BUFFERS - *outval) * 65536 / TXDMA_BUFFERS;
+		return 0;
+	default:
+		return bdev->ctrlops->get_sensor(bdev->self, sensorno, outval);
+	}
 }
 
 static int xtrxllusb3380v0_set_param(struct xtrxll_base_dev* dev,
