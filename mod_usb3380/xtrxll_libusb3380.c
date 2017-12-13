@@ -779,6 +779,8 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 
 	if (chan != 0)
 		return -EINVAL;
+	if (dev->rx_stop)
+		return -EINTR;
 
 	for (;;) {
 		// consume buffer, TODO error checking
@@ -799,6 +801,9 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 
 			if (errno != ETIMEDOUT)
 				return -EIO;
+
+			if (dev->rx_stop)
+				return -EINTR;
 
 			wts_long_t cwts;
 			unsigned bn;
