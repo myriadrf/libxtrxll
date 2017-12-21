@@ -414,6 +414,7 @@ int main(int argc, char** argv)
 	int uart = -1;
 	int refclk_cntr = 0;
 	int pmic_reg = -1;
+	int discovery = 0;
 
 	pthread_t out_thread, in_thread;
 #ifdef __linux
@@ -425,8 +426,11 @@ int main(int argc, char** argv)
 	sem_init(&g_in_buff_available, 0, 0);
 	sem_init(&g_in_buff_ready, 0, 0);
 
-	while ((opt = getopt(argc, argv, "F:fU:C:Z:21A:a:oD:PRT:r:m:vO:I:l:p:S")) != -1) {
+	while ((opt = getopt(argc, argv, "dF:fU:C:Z:21A:a:oD:PRT:r:m:vO:I:l:p:S")) != -1) {
 		switch (opt) {
+		case 'd':
+			discovery = 1;
+			break;
 		case 'F':
 			pmic_reg = atoi(optarg);
 			break;
@@ -502,6 +506,15 @@ int main(int argc, char** argv)
 					argv[0]);
 			exit(EXIT_FAILURE);
 		}
+	}
+
+	if (discovery) {
+		xtrxll_device_info_t buff[32];
+		int count = xtrxll_discovery(buff, 32);
+		for (int i = 0 ; i < count; i++) {
+			printf("%d: %s %s %d %d\n", i, buff[i].uniqname, buff[i].addr, buff[i].product_id, buff[i].revision);
+		}
+		return 0;
 	}
 
 	int res = xtrxll_open(device, 0, &dev);

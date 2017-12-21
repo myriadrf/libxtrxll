@@ -47,13 +47,36 @@ enum xtrxll_claim_flags {
 	XTRXLL_CLAIM_DEV_MSK3 = 0x8000,
 };
 
+typedef enum product_type {
+	PRODUCT_XTRX = 0,
+} product_type_t;
+
+enum {
+	DEV_UNIQNAME_MAX = 64,
+	DEV_ADDR_MAX = 16,
+	DEV_PROTO_MAX = 16,
+	DEV_BUSSPEED_MAX = 16,
+};
+
+typedef struct xtrxll_device_info {
+	char uniqname[DEV_UNIQNAME_MAX];
+	char proto[DEV_PROTO_MAX];
+	char addr[DEV_ADDR_MAX];
+	char busspeed[DEV_BUSSPEED_MAX];
+	uint32_t product_id;
+	uint32_t revision;
+} xtrxll_device_info_t;
+
 /** Open xtrx device
  *
  */
 XTRXLL_API int xtrxll_open(const char* device, unsigned flags,
 						   struct xtrxll_dev** dev);
 XTRXLL_API void xtrxll_close(struct xtrxll_dev* dev);
-XTRXLL_API int xtrxll_discovery(char* devices, size_t maxbuf);
+
+/** Discovery all low-level devices on every plugin */
+XTRXLL_API int xtrxll_discovery(xtrxll_device_info_t* buffer,
+								size_t maxbuf);
 
 XTRXLL_API const char* xtrxll_get_name(struct xtrxll_dev* dev);
 
@@ -122,6 +145,10 @@ enum xtrxll_sensors {
 
 	XTRXLL_DMABUF_RXST64K, /**< RX: 0 - 65535 buffer fullness */
 	XTRXLL_DMABUF_TXST64K, /**< TX: 0 - 65535 buffer fullness */
+
+	/* Special test sensors / not portable, for MGF & testing */
+	XTRXLL_TEST_CNT_RXIQ_MISS,
+	XTRXLL_TEST_CNT_RXIQ_MALGN,
 };
 
 XTRXLL_API int xtrxll_get_sensor(struct xtrxll_dev* dev, unsigned sensorno,

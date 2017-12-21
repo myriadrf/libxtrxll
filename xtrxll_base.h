@@ -29,6 +29,7 @@ struct xtrxll_ctrl_ops;
 
 typedef const struct xtrxll_ops* (*xtrxll_init_func_t)(unsigned abi_version);
 
+
 #define XTRXLL_ABI_VERSION 0x1000001
 
 /**
@@ -44,10 +45,12 @@ struct xtrxll_base_dev {
 	const char* id;
 };
 
+
 struct xtrxll_ops {
 	int (*open)(const char* device, unsigned flags, struct xtrxll_base_dev** dev);
 	void (*close)(struct xtrxll_base_dev* dev);
-	int (*discovery)(char* devices, size_t maxbuf);
+	int (*discovery)(xtrxll_device_info_t* buffer, size_t maxbuf);
+	const char* (*get_proto_id)(void);
 
 	int (*reg_out)(struct xtrxll_base_dev* dev, unsigned reg, uint32_t outval);
 	int (*reg_in)(struct xtrxll_base_dev* dev, unsigned reg, uint32_t* inval);

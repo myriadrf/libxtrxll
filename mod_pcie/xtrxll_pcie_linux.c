@@ -294,9 +294,9 @@ static void xtrxllpciev0_close(struct xtrxll_base_dev* bdev)
 	free(dev);
 }
 
-static int xtrxllpciev0_discovery(char* devices, size_t maxbuf)
+static int xtrxllpciev0_discovery(xtrxll_device_info_t *buffer, size_t maxbuf)
 {
-	return -EINVAL;
+	return 0;
 }
 
 static int xtrxllpciev0_dma_rx_init(struct xtrxll_base_dev* bdev, int chan,
@@ -651,10 +651,15 @@ static int xtrxllpciev0_set_param(struct xtrxll_base_dev* dev,
 	return dev->ctrlops->set_param(dev->self, paramno, val);
 }
 
+static const char* get_proto_id(void) {
+	return "lpcie";
+}
+
 const static struct xtrxll_ops mod_ops = {
 	.open = xtrxllpciev0_open,
 	.close = xtrxllpciev0_close,
 	.discovery = xtrxllpciev0_discovery,
+	.get_proto_id = get_proto_id,
 
 	.reg_out = xtrxllpciev0_reg_out,
 	.reg_in = xtrxllpciev0_reg_in,

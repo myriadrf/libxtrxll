@@ -151,6 +151,12 @@ int main(int argc, char** argv)
 	}
 
 	if (write_filename) {
+		res = xtrxll_set_param(odev, XTRXLL_PARAM_PWR_VIO, 2700);
+		if (res) {
+			fprintf(stderr, "Unable to set VIO to 2.7V for programming\n");
+			goto falied_upl;
+		}
+
 		const unsigned block_size = 4096;
 		char *mem = NULL;
 		uint32_t rounded_size;

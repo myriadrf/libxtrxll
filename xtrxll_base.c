@@ -170,7 +170,7 @@ static void lp8758_en(struct xtrxll_base_dev* dev, int en, int en3v3)
 	lp8758_set(dev, I2C_BUS2, BUCK3_CTRL1, b_ctrl);
 
 	// BUS 1
-	lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(3300));
+	// lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(3300));
 	lp8758_set(dev, I2C_BUS1, BUCK1_CTRL1, 0x88);
 
 	if (en) {
@@ -327,6 +327,16 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 		//*outval = pread(dev->fd, &reg, sizeof(reg), XTRX_KERN_1PPS_EVENTS);
 		//return ( *outval < 0 ) ? *outval : 0;
 		return 0;
+	case XTRXLL_TEST_CNT_RXIQ_MISS:
+		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_RXIQ_MISS,
+								   &tmp);
+		*outval = tmp;
+		return res;
+	case XTRXLL_TEST_CNT_RXIQ_MALGN:
+		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_RXIQ_ODD,
+								   &tmp);
+		*outval = tmp;
+		return res;
 	default:
 		return -EINVAL;
 	}
