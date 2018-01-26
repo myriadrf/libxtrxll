@@ -93,7 +93,7 @@ int xtrxllpciebase_dmatx_post(struct xtrxll_base_pcie_dma* dev, int chan,
 							  unsigned bufno, wts_long_t wts, uint32_t samples);
 
 int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
-							 unsigned* bufno, int* late);
+							 unsigned* bufno, int* late, bool diag);
 
 int xtrxllpciebase_repeat_tx(struct xtrxll_base_pcie_dma* dev,
 							 int chan, xtrxll_fe_t fmt,
@@ -107,5 +107,6 @@ int xtrxllpciebase_dma_start(struct xtrxll_base_pcie_dma* dev, int chan,
 							 wts_long_t rx_start_sample,
 							 xtrxll_fe_t txfe, xtrxll_mode_t txmode);
 
+int xtrxllpciebase_dmarx_stat(struct xtrxll_base_pcie_dma* dev);
 
 #endif //XTRXLL_BASE_PCIE_H

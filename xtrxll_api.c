@@ -268,11 +268,12 @@ int xtrxll_dma_rx_deinit(struct xtrxll_dev* dev, int chan)
 }
 
 int xtrxll_dma_rx_getnext(struct xtrxll_dev* dev, int chan, void** addr,
-						  wts_long_t *ts, unsigned *sz, unsigned flags)
+						  wts_long_t *ts, unsigned *sz, unsigned flags,
+						  unsigned timeout_ms)
 {
 	struct xtrxll_base_dev* bdev = (struct xtrxll_base_dev*)dev;
 	return bdev->selfops->dma_rx_getnext(bdev->self, chan, addr,
-											  ts, sz, flags);
+										 ts, sz, flags, timeout_ms);
 }
 
 int xtrxll_dma_rx_release(struct xtrxll_dev* dev, int chan, void* addr)
@@ -300,10 +301,11 @@ int xtrxll_dma_tx_deinit(struct xtrxll_dev* dev, int chan)
 }
 
 int xtrxll_dma_tx_getfree_ex(struct xtrxll_dev* dev, int chan, void** addr,
-							 uint16_t* late)
+							 uint16_t* late, unsigned timeout_ms)
 {
 	struct xtrxll_base_dev* bdev = (struct xtrxll_base_dev*)dev;
-	return bdev->selfops->dma_tx_getfree_ex(bdev->self, chan, addr, late);
+	return bdev->selfops->dma_tx_getfree_ex(bdev->self, chan, addr, late,
+											timeout_ms);
 }
 
 int xtrxll_dma_tx_post(struct xtrxll_dev* dev, int chan, void* addr,
@@ -336,7 +338,7 @@ int xtrxll_get_osc_freq(struct xtrxll_dev* dev, uint32_t *regval)
 	return bdev->ctrlops->get_osc_freq(bdev->self, regval);
 }
 
-
+/*
 int xtrxll_set_txmmcm(struct xtrxll_dev* dev, uint16_t reg, uint16_t value)
 {
 	struct xtrxll_base_dev* bdev = (struct xtrxll_base_dev*)dev;
@@ -349,6 +351,7 @@ int xtrxll_get_txmmcm(struct xtrxll_dev* dev, uint16_t* value,
 	struct xtrxll_base_dev* bdev = (struct xtrxll_base_dev*)dev;
 	return bdev->ctrlops->get_txmmcm(bdev->self, value, locked, rdy);
 }
+*/
 
 int xtrxll_repeat_tx_buf(struct xtrxll_dev* dev, int chan, xtrxll_fe_t fmt,
 						 const void* buff, unsigned buf_szs, xtrxll_mode_t mode)

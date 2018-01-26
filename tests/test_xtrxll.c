@@ -415,6 +415,7 @@ int main(int argc, char** argv)
 	int refclk_cntr = 0;
 	int pmic_reg = -1;
 	int discovery = 0;
+	int mmcm_tx = 1;
 
 	pthread_t out_thread, in_thread;
 #ifdef __linux
@@ -672,7 +673,7 @@ int main(int argc, char** argv)
 		wts_long_t wts;
 		int j;
 		for (j = 0, i = 0; !g_pipe_broken && !g_exit_flag; ++j) {
-			res = xtrxll_dma_rx_getnext(dev, 0, &ptr, &wts, &sz, XTRXLL_RX_DONTWAIT);
+			res = xtrxll_dma_rx_getnext(dev, 0, &ptr, &wts, &sz, XTRXLL_RX_DONTWAIT, 0);
 			if (res == 0) {
 				if (out_stream != -1) {
 					//size_t bsz = (rxdma == 3) ? sz :
@@ -717,12 +718,12 @@ int main(int argc, char** argv)
 	}
 	
 	if (set_mmcm != -1) {
-		res = xtrxll_mmcm_onoff(dev, set_mmcm != 0);
+		res = xtrxll_mmcm_onoff(dev, mmcm_tx, set_mmcm != 0);
 		if (res)
 			goto falied_reset;
 
 		if (set_mmcm != 0) {
-			res = xtrxll_mmcm_setfreq(dev, set_mmcm, 0, 0, 0);
+			res = xtrxll_mmcm_setfreq(dev, mmcm_tx, set_mmcm, 0, 0, NULL, 0);
 		}
 
 		if (!res) {
@@ -757,10 +758,9 @@ int main(int argc, char** argv)
 		}
 
 		for (j = 0, i = 0; !g_pipe_broken && !g_exit_flag; ++j) {
-			res = xtrxll_dma_tx_getfree(dev, 0, &addr);
+			res = xtrxll_dma_tx_getfree_ex(dev, 0, &addr, NULL, 1000);
 			if (res == -EBUSY) {
-				usleep(500);
-				continue;
+				break;
 			} else if (res < 0) {
 				break;
 			} else if (res == 0) {

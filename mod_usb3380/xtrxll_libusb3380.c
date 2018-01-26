@@ -439,7 +439,7 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 		return res;
 	}
 
-	bool dual_ep = false;
+	bool dual_ep = true;
 	const char* env_dual_ep = getenv("XTRX_USB3380_DUAL_GPEP");
 	if (env_dual_ep) {
 		dual_ep = (atoi(env_dual_ep) > 0) ? true : false;
@@ -450,7 +450,18 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 		dual_ep = true;
 	}
 
-	bool dual_ep_tx = false;
+	bool dual_ep_tx = true;
+	const char* env_tx_dual_ep = getenv("XTRX_USB3380_TXDUAL_GPEP");
+	if (env_tx_dual_ep) {
+		dual_ep_tx = (atoi(env_tx_dual_ep) > 0) ? true : false;
+	}
+	if (strstr(device, "notxdualgpep") != NULL) {
+		dual_ep_tx = false;
+	} else if (strstr(device, "txdualgpep") != NULL) {
+		dual_ep_tx = true;
+	}
+
+
 	XTRXLL_LOG(XTRXLL_INFO, "USB3380 dual fly GPEP RX mode is %s, TX mode is %s\n",
 			   (dual_ep) ? "on" : "off", (dual_ep_tx) ? "on" : "off");
 
@@ -938,7 +949,8 @@ static int xtrxllusb3380v0_dma_rx_gpep_issue(struct xtrxll_usb3380_dev* dev,
 
 static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 										  int chan, void** addr, wts_long_t *wts,
-										  unsigned *sz, unsigned flags)
+										  unsigned *sz, unsigned flags,
+										  unsigned timeout_ms)
 {
 	struct xtrxll_usb3380_dev* dev = (struct xtrxll_usb3380_dev*)bdev;
 	int res;
@@ -948,13 +960,28 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 	if (dev->rx_stop)
 		return -EINTR;
 
+	struct timespec ats;
+	if (flags & XTRXLL_RX_REPORT_TIMEOUT) {
+		clock_gettime(CLOCK_REALTIME, &ats);
+	}
+	unsigned cnt = 0;
 	for (;;) {
 		// consume buffer, TODO error checking
 		struct timespec ts;
-		clock_gettime(CLOCK_REALTIME, &ts);
+		if ((flags & XTRXLL_RX_REPORT_TIMEOUT) && cnt == 0) {
+			ts = ats;
+		} else {
+			clock_gettime(CLOCK_REALTIME, &ts);
+		}
+
+		if (flags & XTRXLL_RX_REPORT_TIMEOUT) {
+			int64_t ms_diff = (ts.tv_sec - ats.tv_sec) * 1000 + (ts.tv_nsec - ats.tv_nsec) / 1000000;
+			if (ms_diff > timeout_ms)
+				return -EAGAIN;
+		}
 
 		// TODO calculate this size based on pkt arraival time
-		ts.tv_nsec += 50 * 1000 * 1000;
+		ts.tv_nsec += ((timeout_ms > 0 && timeout_ms < 50) ? timeout_ms : 50 ) * 1000 * 1000;
 		if (ts.tv_nsec > 1000 * 1000 * 1000) {
 			ts.tv_nsec -= 1000 * 1000 * 1000;
 			ts.tv_sec++;
@@ -967,6 +994,8 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 
 			if (errno != ETIMEDOUT)
 				return -EIO;
+			else
+				cnt++;
 
 			if (dev->rx_stop)
 				return -EINTR;
@@ -994,6 +1023,7 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 				xtrxllpciebase_dmarx_resume(&dev->pcie, chan, cwts);
 			} else if (res == -EAGAIN) {
 				XTRXLL_LOG(XTRXLL_WARNING, "XTRX RX AGAIN\n");
+				xtrxllpciebase_dmarx_stat(&dev->pcie);
 				continue;
 			} else {
 				XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Got %d!\n",
@@ -1311,7 +1341,7 @@ int xtrxllusb3380v0_dma_tx_gpep_issue(struct xtrxll_usb3380_dev* dev, unsigned a
 
 static int xtrxllusb3380v0_dma_tx_getfree_ex(struct xtrxll_base_dev* bdev,
 											 int chan, void** addr,
-											 uint16_t* late)
+											 uint16_t* late, unsigned timeout_ms)
 {
 	struct xtrxll_usb3380_dev* dev = (struct xtrxll_usb3380_dev*)bdev;
 	int res;
@@ -1322,7 +1352,7 @@ static int xtrxllusb3380v0_dma_tx_getfree_ex(struct xtrxll_base_dev* bdev,
 		return -EINVAL;
 
 	if (addr == NULL) {
-		res = xtrxllpciebase_dmatx_get(&dev->pcie, chan, NULL, &ilate);
+		res = xtrxllpciebase_dmatx_get(&dev->pcie, chan, NULL, &ilate, false);
 		if (late) {
 			*late = ilate;
 		}
@@ -1359,13 +1389,13 @@ static int xtrxllusb3380v0_dma_tx_getfree_ex(struct xtrxll_base_dev* bdev,
 		}
 
 		if (!bufno_obtained) {
-			res = xtrxllpciebase_dmatx_get(&dev->pcie, chan, &bufno, &ilate);
+			res = xtrxllpciebase_dmatx_get(&dev->pcie, chan, &bufno, &ilate, false);
 			if (res) {
 				if (res == -EBUSY) {
 					XTRXLL_LOG(XTRXLL_ERROR,  "XTRX %s: TX BUSY\n",
 							   dev->base.id);
 
-					xtrxllpciebase_dmatx_get(&dev->pcie, chan, NULL, &ilate);
+					xtrxllpciebase_dmatx_get(&dev->pcie, chan, NULL, &ilate, false);
 				} else if (res == 0) {
 					goto sec_ok;
 				} else {
@@ -1551,6 +1581,8 @@ static int xtrxllusb3380v0_dma_start(struct xtrxll_base_dev* bdev, int chan,
 
 	if (rxfe == XTRXLL_FE_STOP) {
 		dev->rx_stop = true;
+		xtrxllpciebase_dmarx_stat(&dev->pcie);
+
 		res = pcieusb3380v0_reg_out(dev, UL_GP_ADDR + GP_PORT_WR_RXTXDMA,
 									(1UL << GP_PORT_WR_RXTXDMA_RXV) | (rxfe << GP_PORT_WR_RXTXDMA_RXOFF));
 
@@ -1561,6 +1593,10 @@ static int xtrxllusb3380v0_dma_start(struct xtrxll_base_dev* bdev, int chan,
 								sizeof(tmpbuf),
 								&written, 1);
 #endif
+
+		while (dev->rx_gpep_active[0] || dev->rx_gpep_active[1]) {
+			usleep(1000);
+		}
 	} else if (rxfe != XTRXLL_FE_DONTTOUCH) {
 #ifdef ASYNC_MODE
 		dev->rx_stop = false;

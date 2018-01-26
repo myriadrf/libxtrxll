@@ -97,8 +97,11 @@ static void internal_xtrxll_reg_out_n(struct xtrxll_pcie_dev* dev,
 	for (i = 0; i < count; i++) {
 		to_write[i] = htobe32(outval[i]);
 	}
-
-	memcpy((void*)&dev->mmap_xtrxll_regs[streg], to_write, count * 4);
+	//if (count == 2) {
+	//	*((uint64_t*)&dev->mmap_xtrxll_regs[streg]) = *((uint64_t*)&to_write[0]);
+	//} else {
+		memcpy((void*)&dev->mmap_xtrxll_regs[streg], to_write, count * 4);
+	//}
 	__atomic_thread_fence(__ATOMIC_SEQ_CST);
 
 	XTRXLL_LOG(XTRXLL_DEBUG_REGS, "XTRX %s: Write [%04x+%d] = %08x\n",
@@ -113,7 +116,11 @@ static void internal_xtrxll_reg_in_n(struct xtrxll_pcie_dev* dev,
 	uint32_t to_read[count];
 
 	__atomic_thread_fence(__ATOMIC_SEQ_CST);
-	memcpy(to_read, (void*)&dev->mmap_xtrxll_regs[streg], count * 4);
+	if (count == 2) {
+		*((uint64_t*)&to_read[0]) = *((uint64_t*)&dev->mmap_xtrxll_regs[streg]);
+	} else {
+		memcpy(to_read, (void*)&dev->mmap_xtrxll_regs[streg], count * 4);
+	}
 
 	for (i = 0; i < count; i++) {
 		inval[i] = be32toh(to_read[i]);
@@ -296,6 +303,15 @@ static void xtrxllpciev0_close(struct xtrxll_base_dev* bdev)
 
 static int xtrxllpciev0_discovery(xtrxll_device_info_t *buffer, size_t maxbuf)
 {
+	if (maxbuf > 0) {
+		strncpy(buffer->uniqname, "/dev/xtrx0", sizeof(buffer->uniqname));
+		strncpy(buffer->proto, "PCIe", sizeof(buffer->proto));
+		strncpy(buffer->addr, "pci://0/0/0", sizeof(buffer->addr));
+		strncpy(buffer->busspeed, "10Gbit", sizeof(buffer->busspeed));
+		buffer->revision = 0;
+		buffer->product_id = PRODUCT_XTRX;
+		return 1;
+	}
 	return 0;
 }
 
@@ -376,7 +392,7 @@ static int xtrxllpciev0_dma_rx_resume_at(struct xtrxll_base_dev *bdev, int chan,
 
 static int xtrxllpciev0_dma_rx_getnext(struct xtrxll_base_dev* bdev, int chan,
 									   void** addr, wts_long_t *wts, unsigned *sz,
-									   unsigned flags)
+									   unsigned flags, unsigned timeout_ms)
 {
 	struct xtrxll_pcie_dev* dev = (struct xtrxll_pcie_dev*)bdev;
 
@@ -386,6 +402,8 @@ static int xtrxllpciev0_dma_rx_getnext(struct xtrxll_base_dev* bdev, int chan,
 
 	uint32_t icnt = __atomic_exchange_n((uint32_t*)dev->mmap_stat_buf + XTRX_KERN_MMAP_RX_IRQS,
 										0, __ATOMIC_SEQ_CST);
+//	uint32_t icnt = 0;
+//goto start;
 
 	for (;;) {
 		//		uint32_t icnt = __atomic_exchange_n((int32_t*)dev->mmap_stat_buf + XTRX_KERN_MMAP_RX_IRQS,
@@ -409,32 +427,17 @@ static int xtrxllpciev0_dma_rx_getnext(struct xtrxll_base_dev* bdev, int chan,
 			if (flags & XTRXLL_RX_DONTWAIT) {
 				return -EAGAIN;
 			}
-#if 0
-			// Wait for event
-			struct pollfd pfd;
-			int err;
-
-			pfd.fd = dev->fd;
-			pfd.events = POLLIN | POLLRDBAND;
-			pfd.revents = 0;
-
-			err = poll(&pfd, 1, 10000);
+//start:;
+			int toval = (flags & XTRXLL_RX_REPORT_TIMEOUT) ? timeout_ms : 0;
+			ssize_t err = pread(dev->fd, NULL, toval, XTRX_KERN_MMAP_RX_IRQS);
 			if (err < 0) {
-				XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: RX DMA error %d\n",
-						   dev->base.id, errno);
-				return -EFAULT;
-			} else if (err == 0) {
-				XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: RX DMA timed out\n",
-						   dev->base.id);
-				force_log = true;
-			}
-#endif
-			ssize_t err = pread(dev->fd, NULL, 0, XTRX_KERN_MMAP_RX_IRQS);
-			if (err < 0) {
-				if (errno != -EAGAIN) {
-					XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: RX DMA error %d\n",
-							   dev->base.id, errno);
+				res = errno;
+				if (res != EAGAIN) {
+					XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: RX DMA error %d (to: %d)\n",
+							   dev->base.id, res, timeout_ms);
 					return -EFAULT;
+				} else if (flags & XTRXLL_RX_REPORT_TIMEOUT) {
+					return -EAGAIN;
 				}
 				icnt = 0;
 			} else {
@@ -518,15 +521,46 @@ static int xtrxllpciev0_dma_tx_deinit(struct xtrxll_base_dev* bdev, int chan)
 }
 
 static int xtrxllpciev0_dma_tx_getfree_ex(struct xtrxll_base_dev* bdev,
-										  int chan, void** addr, uint16_t* late)
+										  int chan, void** addr, uint16_t* late,
+										  unsigned timeout_ms)
 {
 	struct xtrxll_pcie_dev* dev = (struct xtrxll_pcie_dev*)bdev;
 	unsigned bufno;
 	int ilate;
 	unsigned *pbufno = (addr) ? &bufno : NULL;
-	int res = xtrxllpciebase_dmatx_get(&dev->pcie, chan, pbufno, &ilate);
-	if (res)
-		return res;
+	bool diag = false;
+	uint32_t icnt = __atomic_exchange_n((uint32_t*)dev->mmap_stat_buf + XTRX_KERN_MMAP_TX_IRQS,
+										0, __ATOMIC_SEQ_CST);
+	for (;;) {
+		int res = xtrxllpciebase_dmatx_get(&dev->pcie, chan, pbufno, &ilate, diag);
+		if (res == 0) {
+			break;
+		} else if (res == -EBUSY) {
+			diag = true;
+			unsigned tm = timeout_ms;
+			if (tm > 1000) {
+				tm = 1000;
+			}
+			ssize_t err = pread(dev->fd, NULL, tm, XTRX_KERN_MMAP_TX_IRQS);
+			if (err < 0) {
+				res = errno;
+				if (res != EAGAIN) {
+					XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: TX DMA error %d (to: %d)\n",
+							   dev->base.id, res, timeout_ms);
+					return -EFAULT;
+				}
+				if (timeout_ms > tm) {
+					timeout_ms -= tm;
+					continue;
+				}
+				return -EBUSY;
+			}
+			//XTRXLL_LOG(XTRXLL_INFO, "Got:%d (%d)\n", err, icnt);
+		} else {
+			return res;
+		}
+	}
+	//XTRXLL_LOG(XTRXLL_INFO, "Got buffer:%d\n", bufno);
 
 	if (late) {
 		*late = ilate;

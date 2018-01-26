@@ -64,16 +64,20 @@ enum {
 
 static uint8_t get_voltage(int vin)
 {
-	uint8_t r = 0x9D;
-	int x = (vin - 1400) / 20;
-
 	if (vin > 3330) {
 		return 0xfc;
-	} else if (x > 0) {
-		r += x;
+	} else if (vin > 1400) {
+		int x = (vin - 1400) / 20;
+		return 0x9D + x;
+	} else if (vin > 730) {
+		int x = (vin - 730) / 5;
+		return 0x18 + x;
+	} else if (vin > 500) {
+		int x = (vin - 500) / 10;
+		return x;
 	}
 
-	return r;
+	return 0;
 }
 
 enum xtrx_power_modes {
@@ -94,33 +98,94 @@ enum xtrx_power_out {
 	V_LMS_1V2 = 1260,
 };
 
+enum xtrx_dig_v {
+	V_AUX_LOW  = 1700,
+	V_AUX_NORM = 1800,
+	V_AUX_HIGH = 1900,
+	V_AUX_MAX  = 2000,
+
+	V_DIG12_LOW  = 1120,
+	V_DIG12_NORM = 1200,
+	V_DIG12_HIGH = 1280,
+	V_DIG12_MAX  = 1320,
+};
+
 enum xtrx_vio {
-	V_IO_ECO = 1500,
+	V_IO_ECO = 1700,
 	V_IO_OPT = 2000,
 	V_IO_PERF= 2700,
 	V_IO_HI  = 3300,
 };
 
-static int xtrxllr3_lms7pwr_set_mode(struct xtrxll_base_dev* dev, enum xtrx_power_modes mode)
+static int xtrxllr3_lms7pwr_set_mode(struct xtrxll_base_dev* dev, unsigned muxmode)
 {
+	unsigned mode = (muxmode & 0xff);
+	unsigned aux_mode = ((muxmode >> 8) & 0x0f);
+	unsigned dig12_mode = ((muxmode >> 12) & 0x0f);
+
 	if (mode > XTRX_PWR_PERF_MAX)
 		return -EINVAL;
+	if (aux_mode > 7)
+		return -EINVAL;
+	if (dig12_mode > 7)
+		return -EINVAL;
 
-	unsigned drop_voltage = 40 * (unsigned)mode;
-
+	unsigned drop_voltage = 40 * mode;
 	lp8758_set(dev, I2C_BUS2, BUCK0_VOUT,  get_voltage(V_LMS_1V8 + drop_voltage));
 	lp8758_set(dev, I2C_BUS2, BUCK1_VOUT,  get_voltage(V_XTRX_XO + drop_voltage));
 	lp8758_set(dev, I2C_BUS2, BUCK2_VOUT,  get_voltage(V_LMS_1V4 + drop_voltage));
 	lp8758_set(dev, I2C_BUS2, BUCK3_VOUT,  get_voltage(V_LMS_1V2 + drop_voltage));
+
+	if (aux_mode > 0) {
+		unsigned auxv = V_AUX_NORM;
+		if (aux_mode == 1) {
+			auxv = V_AUX_LOW;
+		} else if (aux_mode == 3) {
+			auxv = V_AUX_HIGH;
+		} else if (aux_mode == 4) {
+			auxv = V_AUX_MAX;
+		} else if (aux_mode == 5) {
+			auxv = V_AUX_MAX + 20;
+		} else if (aux_mode == 6) {
+			auxv = V_AUX_MAX + 40;
+		} else if (aux_mode == 7) {
+			auxv = V_AUX_MAX + 60;
+		}
+
+		lp8758_set(dev, I2C_BUS1, BUCK3_VOUT,  get_voltage(auxv));
+		XTRXLL_LOG(XTRXLL_WARNING, "V_AUX set to %d\n", auxv);
+	}
+
+	if (dig12_mode > 0) {
+		unsigned digv = V_DIG12_NORM;
+		if (dig12_mode == 1) {
+			digv = V_DIG12_LOW;
+		} else if (dig12_mode == 3) {
+			digv = V_DIG12_HIGH;
+		} else if (dig12_mode == 4) {
+			digv = V_DIG12_MAX;
+		} else if (dig12_mode == 5) {
+			digv = V_DIG12_MAX + 10;
+		} else if (dig12_mode == 6) {
+			digv = V_DIG12_MAX + 20;
+		} else if (dig12_mode == 7) {
+			digv = V_DIG12_MAX + 30;
+		}
+
+		lp8758_set(dev, I2C_BUS1, BUCK2_VOUT,  get_voltage(digv));
+		XTRXLL_LOG(XTRXLL_WARNING, "V_D12 set to %d\n", digv);
+	}
+
 	return 0;
 }
 
 static int xtrxllr3_io_set(struct xtrxll_base_dev* dev, unsigned vio_mv)
 {
-	if (vio_mv < 1400 || vio_mv > 3300)
+	if (vio_mv < 1000 || vio_mv > 3300)
 		return -EINVAL;
 
 	lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(vio_mv));
+	XTRXLL_LOG(XTRXLL_WARNING, "V_IO set to %d\n", vio_mv);
 	return 0;
 }
 
@@ -226,8 +291,9 @@ static int xtrvxllv0_lms7_pwr_ctrl(struct xtrxll_base_dev* dev, uint32_t lmsno, 
 	if (ctrl_mask & XTRXLL_LMS7_GPWR_PIN)  powermask |= (1<<GP_PORT_LMS_CTRL_GPWR);
 	if (ctrl_mask & XTRXLL_LMS7_RXEN_PIN)  powermask |= (1<<GP_PORT_LMS_CTRL_RXEN);
 	if (ctrl_mask & XTRXLL_LMS7_TXEN_PIN)  powermask |= (1<<GP_PORT_LMS_CTRL_TXEN);
-	if (ctrl_mask & XTRXLL_LMS7_RX_TRXIQ)  powermask |= (1<<GP_PORT_LMS_RX_TRXIQ);
+
 	if (ctrl_mask & XTRXLL_LMS7_RX_GEN)    powermask |= (1<<GP_PORT_LMS_FCLK_RX_GEN);
+	if (ctrl_mask & XTRXLL_LMS7_RX_TERM_D) powermask |= (1<<GP_PORT_LMS_RX_TERM_DIS);
 
 	if (ctrl_mask & XTRXLL_EXT_CLK)        powermask |= (1<<GP_PORT_XTRX_EXT_CLK) | (1<<GP_PORT_XTRX_PD_TCXO);
 
@@ -337,6 +403,11 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 								   &tmp);
 		*outval = tmp;
 		return res;
+	case XTRXLL_HWID:
+		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_HWCFG,
+								   &tmp);
+		*outval = tmp;
+		return res;
 	default:
 		return -EINVAL;
 	}
@@ -364,6 +435,61 @@ static int xtrvxllv0_lms7_ant(struct xtrxll_base_dev* dev, unsigned rx_ant, unsi
 	return res;
 }
 
+static int xtrvxllv0_drp_set(struct xtrxll_base_dev* dev, unsigned drpno,
+			   uint16_t reg, uint16_t value,
+			   unsigned drp_gpio, unsigned acc_type)
+{
+	if (drpno >= MAX_DRPS)
+		return -EINVAL;
+
+	uint32_t regout;
+	regout = value | (drpno << GP_PORT_DRP_NUM_OFF) |
+			(((uint32_t)reg & ((1U << GP_PORT_DRP_ADDR_BITS) - 1)) << GP_PORT_DRP_ADDR_OFF) |
+			((drp_gpio & 0xF) << GP_PORT_DRP_GPIO_OFF);
+
+	switch (acc_type) {
+	case DRP_SET_REG_WR:
+		regout |= (1U << GP_PORT_DRP_REGEN) | (1U << GP_PORT_DRP_REGWR);
+		break;
+	case DRP_SET_REG_RD:
+		regout |= (1U << GP_PORT_DRP_REGEN);
+		break;
+	case DRP_SET_GPIO:
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TXMMCM, regout);
+}
+
+static int xtrvxllv0_drp_get(struct xtrxll_base_dev* dev, unsigned drpno,
+							 uint16_t *reg_value, unsigned* drp_gpio)
+{
+	if (drpno >= MAX_DRPS)
+		return -EINVAL;
+
+	uint32_t regin;
+	int res;
+	res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_TXMMCM, &regin);
+	if (res)
+		return res;
+
+	XTRXLL_LOG(XTRXLL_DEBUG, "XTRX %s: MMCM -> %04x (%04x.%04x.%04x.%04x)\n",
+			   dev->id,
+			   regin & 0xffff,
+			   (regin >> 16) & 0xf, (regin >> 20) & 0xf,
+			   (regin >> 24) & 0xf, (regin >> 28) & 0xf);
+
+	if (reg_value)
+		*reg_value = regin & 0xffff;
+	if (drp_gpio)
+		*drp_gpio = (regin >> (16 + 4 * drpno)) & 0xf;
+
+	return 0;
+}
+
+#if 0
 static int xtrvxllv0_set_txmmcm(struct xtrxll_base_dev* dev, uint16_t reg, uint16_t value)
 {
 	uint32_t regout = value | (((uint32_t)reg & (XTRXLL_MMCM_WR_MASK - 1)) << 16);
@@ -388,21 +514,23 @@ static int xtrvxllv0_get_txmmcm(struct xtrxll_base_dev* dev, uint16_t* value,
 	if (res)
 		return res;
 
-	XTRXLL_LOG(XTRXLL_DEBUG, "XTRX %s: MMCM -> %04x %c%c\n",
+	XTRXLL_LOG(XTRXLL_DEBUG, "XTRX %s: MMCM -> %04x %c%c%c%c\n",
 			   dev->id,
 			   regin & 0xffff,
-			   (regin & (1 << GP_PORT_TXMMCM_LOCKED)) ? 'L' : '-',
-			   (regin & (1 << GP_PORT_TXMMCM_RDY)) ? 'R' : '-');
+			   (regin & (1 << (GP_PORT_IN_DRP0 + GP_PORT_IN_MMCM_LOCKED))) ? 'L' : '-',
+			   1/*(regin & (1 << GP_PORT_TXMMCM_RDY))*/ ? 'R' : '-',
+			   (regin & (1 << (GP_PORT_IN_DRP0 + GP_PORT_IN_MMCM_STOPPED))) ? 'S' : '-',
+			   (regin & (1 << (GP_PORT_IN_DRP0 + GP_PORT_IN_MMCM_STOPPEDF))) ? 'F' : '-');
 
 	if (value)
 		*value = regin & 0xffff;
 	if (locked)
-		*locked = (regin & (1 << GP_PORT_TXMMCM_LOCKED)) ? 1 : 0;
+		*locked = (regin & (1 << (GP_PORT_IN_DRP0 + GP_PORT_IN_MMCM_LOCKED))) ? 1 : 0;
 	if (rdy)
-		*rdy = (regin & (1 << GP_PORT_TXMMCM_RDY)) ? 1 : 0;
+		*rdy = 1; // (regin & (1 << GP_PORT_TXMMCM_RDY)) ? 1 : 0;
 	return 0;
 }
-
+#endif
 
 static int xtrvxllv0_issue_timmed_command(struct xtrxll_base_dev* dev,
 									   wts32_t time,
@@ -445,7 +573,7 @@ int xtrvxllv0_read_uart(struct xtrxll_base_dev* dev, unsigned uartno, uint8_t* o
 
 	for (i =  0; i < maxsize; i++) {
 		res = dev->selfops->reg_in(dev->self,
-								   (uartno == 0) ? GP_PORT_RD_UART_RX : GP_PORT_RD_SIM_RX,
+								   UL_GP_ADDR + ((uartno == 0) ? GP_PORT_RD_UART_RX : GP_PORT_RD_SIM_RX),
 								   &rin);
 		if (res)
 			return res;
@@ -475,7 +603,7 @@ static int xtrvxllv0_mem_wr32(struct xtrxll_base_dev* dev,
 	unsigned p = xtrx_addr / (MCU_PAGESIZE / 4);
 	//unsigned o = xtrx_addr % (MCU_PAGESIZE / 4);
 
-	res = dev->selfops->reg_out(dev->self, GP_PORT_WR_RF_SWITCHES,
+	res = dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_RF_SWITCHES,
 								(1 << MCU_CTRL_VALID) |
 								(1 << MCU_CTRL_RESET) |
 								(p << MCU_CTRL_PAGESEL));
@@ -531,9 +659,13 @@ static int xtrvxllv0_set_param(struct xtrxll_base_dev* dev, unsigned paramno, un
 		return -EINVAL;
 	}
 	case XTRXLL_PARAM_PWR_MODE:
-		return xtrxllr3_lms7pwr_set_mode(dev, (enum xtrx_power_modes)param);
+		return xtrxllr3_lms7pwr_set_mode(dev, param);
 	case XTRXLL_PARAM_PWR_VIO:
 		return xtrxllr3_io_set(dev, param);
+	case XTRXLL_PARAM_RX_DLY:
+		return dev->selfops->reg_out(dev->self,
+									 UL_GP_ADDR + GP_PORT_WR_LMS_CTRL,
+									 ((param << 17) | (1 <<16)));
 	default:
 		return -EINVAL;
 	}
@@ -549,8 +681,8 @@ const static struct xtrxll_ctrl_ops s_xtrx_base_ops = {
 	.set_osc_dac = xtrvxllv0_set_osc_dac,
 	.get_osc_freq = xtrvxllv0_get_osc_freq,
 
-	.set_txmmcm = xtrvxllv0_set_txmmcm,
-	.get_txmmcm = xtrvxllv0_get_txmmcm,
+	.drp_set = xtrvxllv0_drp_set,
+	.drp_get = xtrvxllv0_drp_get,
 
 	.issue_timmed_command = xtrvxllv0_issue_timmed_command,
 

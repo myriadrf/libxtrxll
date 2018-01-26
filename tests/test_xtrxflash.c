@@ -45,9 +45,17 @@ int main(int argc, char** argv)
 	int bitformat = 0;
 	int res;
 	struct xtrxll_base_dev *dev;
+	unsigned vio_program = 2700;
+	unsigned vio_read = 0;
 
-	while ((opt = getopt(argc, argv, "d:o:r:s:l:iO:S:w:neDI")) != -1) {
+	while ((opt = getopt(argc, argv, "d:o:r:s:l:iO:S:w:neDIV:v:")) != -1) {
 		switch (opt) {
+		case 'v':
+			vio_read = atoi(optarg);
+			break;
+		case 'V':
+			vio_program = atoi(optarg);
+			break;
 		case 'd':
 			device = optarg;
 			break;
@@ -132,6 +140,20 @@ int main(int argc, char** argv)
 
 		FILE* f = fopen(read_filename, "w+b");
 		if (f) {
+			if (vio_read > 1000) {
+				res = xtrxll_lms7_pwr_ctrl(odev, XTRXLL_LMS7_0, 0);
+				if (res) {
+					fprintf(stderr, "Unable to reset LMS power");
+					goto falied_upl;
+				}
+
+				res = xtrxll_set_param(odev, XTRXLL_PARAM_PWR_VIO, vio_read);
+				if (res) {
+					fprintf(stderr, "Unable to set VIO to %dmV for reading\n", vio_read);
+					goto falied_upl;
+				}
+				usleep(1000);
+			}
 			res = xtrxll_flash_to_host(dev, read_flash_off,
 									   read_file_size, mem);
 			if (!res) {
@@ -151,11 +173,18 @@ int main(int argc, char** argv)
 	}
 
 	if (write_filename) {
-		res = xtrxll_set_param(odev, XTRXLL_PARAM_PWR_VIO, 2700);
+		res = xtrxll_lms7_pwr_ctrl(odev, XTRXLL_LMS7_0, 0);
 		if (res) {
-			fprintf(stderr, "Unable to set VIO to 2.7V for programming\n");
+			fprintf(stderr, "Unable to reset LMS power");
 			goto falied_upl;
 		}
+
+		res = xtrxll_set_param(odev, XTRXLL_PARAM_PWR_VIO, vio_program);
+		if (res) {
+			fprintf(stderr, "Unable to set VIO to %dmV for programming\n", vio_program);
+			goto falied_upl;
+		}
+		usleep(1000);
 
 		const unsigned block_size = 4096;
 		char *mem = NULL;

@@ -64,14 +64,14 @@ localparam GP_PORT_RD_RXIQ_ODD    = 22;
 localparam GP_PORT_RD_RXIQ_BI_BQ  = 23;
 
 localparam GP_PORT_RD_USB_RB      = 24;
-localparam GP_PORT_RD_USB_DEBUG   = 25;
-localparam GP_PORT_RD_USB_DEBUG1  = 26;
-localparam GP_PORT_RD_USB_DEBUG2  = 27;
+localparam GP_PORT_RD_RXIQ_PERIOD = 25;
+localparam GP_PORT_RD_HWCFG       = 26;
+localparam GP_PORT_RD_USB_DEBUG0  = 27;
 
-localparam GP_PORT_RD_USB_DEBUG3  = 28;
-localparam GP_PORT_RD_USB_DEBUG4  = 29;
-localparam GP_PORT_RD_USB_DEBUG5  = 30;
-localparam GP_PORT_RD_USB_DEBUG6  = 31;
+localparam GP_PORT_RD_USB_DEBUG1  = 28;
+localparam GP_PORT_RD_USB_DEBUG2  = 29;
+localparam GP_PORT_RD_USB_DEBUG3  = 30;
+localparam GP_PORT_RD_USB_DEBUG4  = 31;
 
 localparam GP_PORT_RD_USB_EP0_O   = 32;
 localparam GP_PORT_RD_USB_EP1_O   = 32 + 1;
@@ -122,8 +122,9 @@ localparam GP_PORT_LMS_CTRL_RESET    = 1;
 localparam GP_PORT_LMS_CTRL_GPWR     = 2;
 localparam GP_PORT_LMS_CTRL_RXEN     = 3;
 localparam GP_PORT_LMS_CTRL_TXEN     = 4;
-localparam GP_PORT_LMS_RX_TRXIQ      = 5;
+
 localparam GP_PORT_LMS_FCLK_RX_GEN   = 6;
+localparam GP_PORT_LMS_RX_TERM_DIS   = 7;
 
 localparam GP_PORT_XTRX_ENBPVIO_N     = 8;
 localparam GP_PORT_XTRX_ENBP3V3_N     = 9;
@@ -145,16 +146,49 @@ localparam WR_SIM_CTRL_ENABLE = 1;
 localparam WR_SIM_CTRL_33V    = 2;
 
 // Bits in GP_PORT_WR_TXMMCM
-localparam GP_PORT_TXMMCM_REGEN   = 23;
-localparam GP_PORT_TXMMCM_REGWR   = 24;
-localparam GP_PORT_TXMMCM_CLKSEL  = 25;
-localparam GP_PORT_TXMMCM_RESET   = 26;
-localparam GP_PORT_TXMMCM_PWRDOWN = 27;
+
+localparam GP_PORT_DRP_ADDR_OFF  = 16;
+localparam GP_PORT_DRP_ADDR_BITS = 7;
+localparam GP_PORT_DRP_REGEN     = 23;
+localparam GP_PORT_DRP_REGWR     = 24;
+localparam GP_PORT_DRP_GPIO_OFF  = 25;
+localparam GP_PORT_DRP_NUM_OFF   = 30;
+
+//localparam GP_PORT_TXMMCM_REGEN   = 23;
+//localparam GP_PORT_TXMMCM_REGWR   = 24;
+//localparam GP_PORT_TXMMCM_CLKSEL  = 25;
+//localparam GP_PORT_TXMMCM_RESET   = 26;
+//localparam GP_PORT_TXMMCM_PWRDOWN = 27;
 // Bits in GP_PORT_RD_TXMMCM
-localparam GP_PORT_TXMMCM_LOCKED  = 28;
-localparam GP_PORT_TXMMCM_RDY     = 29;
+
+//localparam GP_PORT_TXMMCM_LOCKED  = 28;
+//localparam GP_PORT_TXMMCM_RDY     = 29;
+//localparam GP_PORT_TXMMCM_STOPPED = 30;
+//localparam GP_PORT_TXMMCM_STOPPEDF= 31;
 
 
+localparam GP_PORT_IN_DRP0 = 16;
+localparam GP_PORT_IN_DRP1 = 20;
+localparam GP_PORT_IN_DRP2 = 24;
+localparam GP_PORT_IN_DRP3 = 28;
+
+localparam GP_PORT_IN_MMCM_LOCKED  = 0;
+localparam GP_PORT_IN_MMCM_STOPPED = 1;
+localparam GP_PORT_IN_MMCM_STOPPEDF= 2;
+
+localparam GP_PORT_OUT_MMCM_CLKSEL1 = 0;
+localparam GP_PORT_OUT_MMCM_RESET   = 1;
+localparam GP_PORT_OUT_MMCM_PWRDOWN = 2;
+
+
+//localparam GP_PORT_TXMMCM_LOCKED  = 28;
+//localparam GP_PORT_TXMMCM_RDY     = 29;
+//localparam GP_PORT_TXMMCM_STOPPED = 30;
+//localparam GP_PORT_TXMMCM_STOPPEDF= 31;
+
+localparam DRP_PORT_MMCM_TX   = 0;
+localparam DRP_PORT_MMCM_RX   = 1;
+localparam DRP_PORT_MMCM_PCIE = 2;
 
 // Formats for RX/TX DMA
 localparam FMT_STOP  = 0;
@@ -199,6 +233,10 @@ localparam INT_COUNT_L = 6;
 localparam INT_COUNT_H = 3;
 
 localparam INT_PCIE_I_FLAG = 15;
+
+localparam INT_PCIE_E_NO_RX_DMA_FLOW = 24;
+
+localparam INT_PCIE_E_OVRD = 30;
 localparam INT_PCIE_E_FLAG = 31;
 
 
