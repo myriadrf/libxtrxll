@@ -49,18 +49,21 @@ int xtrxllpciebase_init(struct xtrxll_base_pcie_dma* dev)
 	return 0;
 }
 
-static int xtrxllpciebase_dmarx_stat(struct xtrxll_base_pcie_dma* dev)
+int xtrxllpciebase_dmarx_stat(struct xtrxll_base_pcie_dma* dev)
 {
 #if 1
 	int res;
-	uint32_t miss, odd;
+	uint32_t miss, odd, period;
 	res = dev->base.selfops->reg_in(dev->base.self,
 									UL_GP_ADDR + GP_PORT_RD_RXIQ_MISS,
 									&miss);
 	res = dev->base.selfops->reg_in(dev->base.self,
 									UL_GP_ADDR + GP_PORT_RD_RXIQ_ODD,
 									&odd);
-	XTRXLL_LOG(XTRXLL_ERROR, "XTRX P: %08x %08x\n", miss, odd);
+	res = dev->base.selfops->reg_in(dev->base.self,
+									UL_GP_ADDR + GP_PORT_RD_RXIQ_PERIOD,
+									&period);
+	XTRXLL_LOG(XTRXLL_ERROR, "XTRX P: %08x %08x <-> %08x\n", miss, odd, period);
 	return res;
 #else
 	return 0;
@@ -132,6 +135,9 @@ int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 			wts_long_t nxt_high = (dev->rd_cur_sample & ~((wts_long_t)TS_WTS_INTERNAL_MASK)) | (nxt & TS_WTS_INTERNAL_MASK);
 			if ((dev->rd_cur_sample & TS_WTS_INTERNAL_MASK) > (nxt & TS_WTS_INTERNAL_MASK))
 				nxt_high += TS_WTS_INTERNAL_MASK + 1;
+
+			// FIXME
+			nxt_high += 256 * dev->rd_block_samples;
 
 			XTRXLL_LOG(XTRXLL_INFO, "XTRX %s: BUF_OVF TS:%" PRIu64
 					   " WTS:%d WTS_NXT:%d TS_NXT:%" PRIu64 " SKIP %" PRIu64 " buffers INT_S:%u\n",
@@ -231,7 +237,7 @@ int xtrxllpciebase_dmatx_post(struct xtrxll_base_pcie_dma* dev, int chan,
 }
 
 int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
-							 unsigned* bufno, int* late)
+							 unsigned* bufno, int* late, bool diag)
 {
 	if (chan != 0)
 		return -EINVAL;
@@ -253,7 +259,7 @@ int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 
 		uint32_t stat_regs[TOTAL] = { ~0U, ~0U, ~0U, ~0U };
 		int res;
-		unsigned cnt = (s_loglevel >= XTRXLL_DEBUG || (bufno == NULL)) ? 4 :
+		unsigned cnt = (s_loglevel >= XTRXLL_DEBUG || (bufno == NULL) || diag) ? 4 :
 					   (late) ? 2 : 1;
 		res = dev->base.selfops->reg_in_n(dev->base.self,
 										  UL_GP_ADDR + GP_PORT_RD_TXDMA_STAT,
@@ -277,7 +283,7 @@ int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 		nwr      = (bufstat >> TXDMA_BUFNO_WR) & 0x3f;
 
 
-		XTRXLL_LOG((bufno == NULL) ? XTRXLL_WARNING : XTRXLL_DEBUG,
+		XTRXLL_LOG((bufno == NULL || diag) ? XTRXLL_WARNING : XTRXLL_DEBUG,
 				   "XTRX %s: TX DMA STAT %02d|%02d/%02d/%02d/%02d RESET:%d "
 				   "Full:%d TxS:%x  %02d/%02d FE:%d FLY:%x D:%d TS:%d CPL:%08x\n",
 				   dev->base.id, dev->tx_written, nwr, ncleared, ntrans, rdx,
@@ -297,7 +303,7 @@ int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 		}
 		//if (((dev->tx_written - ncleared) & 0x3f) >= TXDMA_BUFFERS - 2)
 		//	return -EBUSY;
-		if (((dev->tx_written - ncleared) & 0x3f) >= TXDMA_BUFFERS - 1)
+		if (((dev->tx_written - ncleared) & 0x3f) >= TXDMA_BUFFERS - 2)
 			return -EBUSY;
 
 		nwr = dev->tx_written;
@@ -305,7 +311,7 @@ int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 		if (bufno) {
 			dev->tx_written = (dev->tx_written + 1) & 0x3f;
 		}
-		dev->tx_wrsafe = TXDMA_BUFFERS - 1 - ((dev->tx_written - ncleared) & 0x3f);
+		dev->tx_wrsafe = TXDMA_BUFFERS - 2 - ((dev->tx_written - ncleared) & 0x3f);
 		if (late) {
 			dev->tx_late_bursts = (statm >> 16);
 		}
@@ -489,6 +495,7 @@ int xtrxllpciebase_dma_start(struct xtrxll_base_pcie_dma* dev, int chan,
 	}
 
 	if (rxfe == XTRXLL_FE_STOP) {
+		xtrxllpciebase_dmarx_stat(dev);
 		xtrxllpciebase_dmarx_stat(dev);
 	}
 
