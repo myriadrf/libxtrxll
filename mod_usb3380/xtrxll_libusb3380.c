@@ -1014,6 +1014,27 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 					*wts = cwts;
 				}
 
+				if (!dev->rx_dma_flow_ctrl) {
+					// fixup counters in USB mode (note: flow control is done
+					// on PCIe-USB bridge, so application control is disables)
+					uint32_t bufstat, bufno, bufno_rd;
+					for (;;) {
+						res = dev->base.selfops->reg_in(dev->base.self,
+														UL_GP_ADDR + GP_PORT_RD_RXDMA_STAT,
+														&bufstat);
+						if (res)
+							return res;
+
+						bufno    = (bufstat >> RXDMA_BUFNO) & 0x3f;
+						bufno_rd = (bufstat >> RXDMA_BUFNO_READ) & 0x3f;
+
+						if (bufno == bufno_rd)
+							break;
+
+						pcieusb3380v0_reg_out(dev, UL_GP_ADDR + GP_PORT_WR_RXDMA_CNFRM, 0);
+					}
+				}
+
 				if (!(flags & XTRXLL_RX_NOSTALL)) {
 					return -EOVERFLOW;
 				}

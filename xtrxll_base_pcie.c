@@ -108,6 +108,7 @@ int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 		//xtrxllpciebase_dmarx_stat(dev);
 		if (bufstat & (1U << RXDMA_OVF)) {
 			dev->rx_owf_detected = true;
+			dev->rx_rdsafe = 0;
 		}
 
 		if (dev->rx_owf_detected && (bufno == bufno_rd || no_upd)) {
@@ -152,8 +153,11 @@ int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 			dev->rx_rdsafe--;
 
 			/* WR pointer can be only RXDMA_BUFFERS buffers ahead */
-			if (((bufno - bufno_rd) & 0x3f) > RXDMA_BUFFERS)
+			if (((bufno - bufno_rd) & 0x3f) > RXDMA_BUFFERS) {
+				XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Incorrect DMA pointers! (bufno=%d bufno_rd=%d rdidx=%d icnt=%d)\n",
+						   dev->base.id, bufno, bufno_rd, dev->rd_buf_idx, icnt);
 				return -EPIPE;
+			}
 
 			if (bufno == bufno_rd) {
 				return -EAGAIN;
