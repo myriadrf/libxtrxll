@@ -414,7 +414,7 @@ static int xtrxllpciev0_dma_rx_getnext(struct xtrxll_base_dev* bdev, int chan,
 		}
 
 		res = xtrxllpciebase_dmarx_get(&dev->pcie, chan, &bn, wts, sz,
-									   force_log, icnt, false);
+									   force_log ? PCIEDMARX_FORCE_LOG : 0, icnt);
 		if (res == 0) {
 			break;
 		} else if (res == -EOVERFLOW) {
@@ -529,7 +529,7 @@ static int xtrxllpciev0_dma_tx_getfree_ex(struct xtrxll_base_dev* bdev,
 	int ilate;
 	unsigned *pbufno = (addr) ? &bufno : NULL;
 	bool diag = false;
-	uint32_t icnt = __atomic_exchange_n((uint32_t*)dev->mmap_stat_buf + XTRX_KERN_MMAP_TX_IRQS,
+	/*uint32_t icnt = */__atomic_exchange_n((uint32_t*)dev->mmap_stat_buf + XTRX_KERN_MMAP_TX_IRQS,
 										0, __ATOMIC_SEQ_CST);
 	for (;;) {
 		int res = xtrxllpciebase_dmatx_get(&dev->pcie, chan, pbufno, &ilate, diag);

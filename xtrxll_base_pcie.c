@@ -72,10 +72,14 @@ int xtrxllpciebase_dmarx_stat(struct xtrxll_base_pcie_dma* dev)
 
 int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 							 unsigned *pbufno, wts_long_t *wts, unsigned *sz,
-							 bool force_log, unsigned icnt, bool no_upd)
+							 unsigned flags, unsigned icnt)
 {
 	if (chan != 0)
 		return -EINVAL;
+
+	bool force_log = (flags & PCIEDMARX_FORCE_LOG);
+	bool no_upd = (flags & PCIEDMARX_NO_CNTR_UPD);
+	bool no_chk = (flags & PCIEDMARX_NO_CNTR_CHECK);
 
 	unsigned bufno, bufno_rd;
 	int res;
@@ -111,7 +115,7 @@ int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 			dev->rx_rdsafe = 0;
 		}
 
-		if (dev->rx_owf_detected && (bufno == bufno_rd || no_upd)) {
+		if (dev->rx_owf_detected && (bufno == bufno_rd || no_upd || no_chk)) {
 			dev->rx_rdsafe = 0;
 			dev->rx_owf_detected = false;
 
@@ -148,7 +152,7 @@ int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 
 			*wts = nxt_high;
 			return -EOVERFLOW;
-		} else {
+		} else if (!no_chk) {
 			dev->rx_rdsafe = ((bufno - bufno_rd) & 0x3f);
 			dev->rx_rdsafe--;
 
@@ -162,6 +166,8 @@ int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 			if (bufno == bufno_rd) {
 				return -EAGAIN;
 			}
+		} else {
+			return -EAGAIN;
 		}
 	} else {
 		XTRXLL_LOG(XTRXLL_DEBUG, "XTRX %s: RD %d of %d\n",

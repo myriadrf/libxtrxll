@@ -80,6 +80,12 @@ enum pci_ids {
 	XTRX_VID_V0 = 0x10ee,
 };
 
+enum pciebase_dmarx_flags {
+	PCIEDMARX_FORCE_LOG = 1,
+	PCIEDMARX_NO_CNTR_UPD = 2,
+	PCIEDMARX_NO_CNTR_CHECK = 4,
+};
+
 int xtrxllpciebase_init(struct xtrxll_base_pcie_dma* dev);
 
 int xtrxllpciebase_dmarx_resume(struct xtrxll_base_pcie_dma* dev, int chan,
@@ -87,7 +93,7 @@ int xtrxllpciebase_dmarx_resume(struct xtrxll_base_pcie_dma* dev, int chan,
 
 int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 							 unsigned *pbufno, wts_long_t *wts, unsigned *sz,
-							 bool force_log, unsigned icnt, bool no_upd);
+							 unsigned flags, unsigned icnt);
 
 int xtrxllpciebase_dmatx_post(struct xtrxll_base_pcie_dma* dev, int chan,
 							  unsigned bufno, wts_long_t wts, uint32_t samples);

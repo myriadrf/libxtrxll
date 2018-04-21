@@ -543,7 +543,7 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 	dev->devid = 0x1;
 	dev->bar0 = usb3380_pci_dev_bar_addr(pcidev, 0);
 	dev->bar1 = usb3380_pci_dev_bar_addr(pcidev, 1);
-	dev->rx_dma_flow_ctrl = false;
+	dev->rx_dma_flow_ctrl = true;
 
 	res = pthread_mutex_init(&dev->dev_mem_mutex, NULL);
 	if (res) {
@@ -1003,36 +1003,16 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 			wts_long_t cwts;
 			unsigned bn;
 			res = xtrxllpciebase_dmarx_get(&dev->pcie, chan, &bn, &cwts, sz,
-										   true, 0, true);
+										   (dev->rx_dma_flow_ctrl) ? PCIEDMARX_NO_CNTR_UPD : PCIEDMARX_NO_CNTR_CHECK, 0);
 			if (res == 0) {
 				XTRXLL_LOG(XTRXLL_WARNING, "XTRX RX DATA BUT NOT BUF\n");
 				continue;
 			} else if (res == -EOVERFLOW) {
+				XTRXLL_LOG(XTRXLL_WARNING, "XTRX RX OVERFLOW\n");
 				cwts += dev->pcie.cfg_rx_bufsize;
 				dev->pcie.rd_cur_sample = cwts;
 				if (*wts) {
 					*wts = cwts;
-				}
-
-				if (!dev->rx_dma_flow_ctrl) {
-					// fixup counters in USB mode (note: flow control is done
-					// on PCIe-USB bridge, so application control is disables)
-					uint32_t bufstat, bufno, bufno_rd;
-					for (;;) {
-						res = dev->base.selfops->reg_in(dev->base.self,
-														UL_GP_ADDR + GP_PORT_RD_RXDMA_STAT,
-														&bufstat);
-						if (res)
-							return res;
-
-						bufno    = (bufstat >> RXDMA_BUFNO) & 0x3f;
-						bufno_rd = (bufstat >> RXDMA_BUFNO_READ) & 0x3f;
-
-						if (bufno == bufno_rd)
-							break;
-
-						pcieusb3380v0_reg_out(dev, UL_GP_ADDR + GP_PORT_WR_RXDMA_CNFRM, 0);
-					}
 				}
 
 				if (!(flags & XTRXLL_RX_NOSTALL)) {
@@ -1043,8 +1023,8 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 
 				xtrxllpciebase_dmarx_resume(&dev->pcie, chan, cwts);
 			} else if (res == -EAGAIN) {
-				XTRXLL_LOG(XTRXLL_WARNING, "XTRX RX AGAIN\n");
-				xtrxllpciebase_dmarx_stat(&dev->pcie);
+				XTRXLL_LOG(XTRXLL_DEBUG, "XTRX RX AGAIN\n");
+				//xtrxllpciebase_dmarx_stat(&dev->pcie);
 				continue;
 			} else {
 				XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Got %d!\n",
