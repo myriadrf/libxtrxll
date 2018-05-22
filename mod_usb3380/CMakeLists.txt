@@ -11,4 +11,23 @@ set_target_properties(xtrxll_libusb3380 PROPERTIES VERSION ${LIBVER} SOVERSION $
 
 install(TARGETS xtrxll_libusb3380 DESTINATION ${XTRXLL_LIBRARY_DIR})
 
-install(FILES udev/50-xtrx-usb3380.rules DESTINATION "../etc/udev/rules.d" COMPONENT xtrx-usb)
+
+########################################################################
+# Install udev rules
+########################################################################
+option(INSTALL_UDEV_RULES "Install udev rules for xtrx" OFF)
+if (INSTALL_UDEV_RULES)
+    set(UDEV_RULES_PATH
+        "/etc/udev/rules.d"
+        CACHE STRING
+        "Target directory for udev rule installation. Ensure you have permissions to write to this directory."
+        )
+    install (
+        FILES udev/50-xtrx-usb3380.rules
+        DESTINATION ${UDEV_RULES_PATH}
+        COMPONENT "xtrx-usb"
+        )
+else (INSTALL_UDEV_RULES)
+    message (STATUS "Udev rules not being installed, install them with -DINSTALL_UDEV_RULES=ON")
+endif (INSTALL_UDEV_RULES)
+
