@@ -39,14 +39,14 @@ int main(int argc, char** argv)
 
 	int dont_write_verify = 0;
 	int show_info = 0;
-	int loglevel = 3;
+	int loglevel = 2;
 	//int erase_bulk = 0;
 	int memdump = 0;
 	int bitformat = 0;
 	int res;
 	struct xtrxll_base_dev *dev;
 	unsigned vio_program = 2700;
-	unsigned vio_read = 0;
+	unsigned vio_read = 2300;
 
 	while ((opt = getopt(argc, argv, "d:o:r:s:l:iO:S:w:neDIV:v:")) != -1) {
 		switch (opt) {
@@ -121,6 +121,26 @@ int main(int argc, char** argv)
 			printf("%d:\t%08x\n", i, mem[i]);
 	}
 
+	res = xtrxll_set_param(odev, XTRXLL_PARAM_PWR_CTRL, PWR_CTRL_BUSONLY);
+	if (res) {
+		fprintf(stderr, "Unable to reset LMS power");
+		goto falied_upl;
+	}
+
+	usleep(50000);
+
+	if (vio_read > 1000) {
+		res = xtrxll_set_param(odev, XTRXLL_PARAM_PWR_VIO, vio_read);
+		if (res) {
+			fprintf(stderr, "Unable to set VIO to %dmV for reading\n", vio_read);
+			goto falied_upl;
+		}
+		usleep(10000);
+	}
+
+	if (!read_filename && !write_filename)
+		show_info = 1;
+
 	if (show_info) {
 		uint32_t flash_id;
 		uint32_t capacity;
@@ -140,20 +160,6 @@ int main(int argc, char** argv)
 
 		FILE* f = fopen(read_filename, "w+b");
 		if (f) {
-			if (vio_read > 1000) {
-				res = xtrxll_lms7_pwr_ctrl(odev, XTRXLL_LMS7_0, 0);
-				if (res) {
-					fprintf(stderr, "Unable to reset LMS power");
-					goto falied_upl;
-				}
-
-				res = xtrxll_set_param(odev, XTRXLL_PARAM_PWR_VIO, vio_read);
-				if (res) {
-					fprintf(stderr, "Unable to set VIO to %dmV for reading\n", vio_read);
-					goto falied_upl;
-				}
-				usleep(1000);
-			}
 			res = xtrxll_flash_to_host(dev, read_flash_off,
 									   read_file_size, mem);
 			if (!res) {
@@ -173,12 +179,6 @@ int main(int argc, char** argv)
 	}
 
 	if (write_filename) {
-		res = xtrxll_lms7_pwr_ctrl(odev, XTRXLL_LMS7_0, 0);
-		if (res) {
-			fprintf(stderr, "Unable to reset LMS power");
-			goto falied_upl;
-		}
-
 		res = xtrxll_set_param(odev, XTRXLL_PARAM_PWR_VIO, vio_program);
 		if (res) {
 			fprintf(stderr, "Unable to set VIO to %dmV for programming\n", vio_program);
@@ -280,6 +280,7 @@ int main(int argc, char** argv)
 	res = 0;
 
 falied_upl:
+	xtrxll_set_param(odev, XTRXLL_PARAM_PWR_CTRL, PWR_CTRL_PDOWN);
 	xtrxll_close(odev);
 falied_open:
 	return res;

@@ -80,19 +80,6 @@ XTRXLL_API int xtrxll_discovery(xtrxll_device_info_t* buffer,
 
 XTRXLL_API const char* xtrxll_get_name(struct xtrxll_dev* dev);
 
-enum xtrxll_cfg {
-	XTRXLL_CFG_NUM_LMS7,
-	XTRXLL_CFG_HAS_GPS,
-	XTRXLL_CFG_HAS_SIM_READER,
-
-	/** Get internal TX buffer in SISO I/Q symbols, for MIMO this value /2 */
-	XTRXLL_CFG_INT_TX_BUF_SYMS,
-};
-
-XTRXLL_API int xtrxll_get_cfg(struct xtrxll_dev* dev, enum xtrxll_cfg param,
-							  int* out);
-
-
 enum xtrxll_lms7_mask {
 	XTRXLL_LMS7_0 = 1,
 	XTRXLL_LMS7_1 = 2,
@@ -106,27 +93,6 @@ XTRXLL_API int xtrxll_lms7_spi_bulk(struct xtrxll_dev* dev, uint32_t lmsno,
 									const uint32_t* out, uint32_t* in,
 									size_t count);
 
-// LMS7 control
-enum xtrxll_lms7_pwr {
-	XTRXLL_LMS7_RESET_PIN = 1<<1,
-	XTRXLL_LMS7_GPWR_PIN  = 1<<2,
-	XTRXLL_LMS7_RXEN_PIN  = 1<<3,
-	XTRXLL_LMS7_TXEN_PIN  = 1<<4,
-
-	XTRXLL_LMS7_RX_GEN    = 1<<6,
-	XTRXLL_LMS7_RX_TERM_D = 1<<7,
-
-	XTRXLL_EXT_CLK        = 1<<8,
-
-	XTRXLL_DCDC_ON        = 1<<16,
-};
-
-XTRXLL_API int xtrxll_lms7_pwr_ctrl(struct xtrxll_dev* dev, uint32_t lmsno,
-									unsigned ctrl_mask);
-
-XTRXLL_API int xtrxll_lms7_ant(struct xtrxll_dev* dev, unsigned rx_ant,
-							   unsigned tx_ant);
-
 enum xtrxll_sensors {
 	XTRXLL_TEMP_SENSOR_CUR,
 	XTRXLL_TEMP_SENSOR_MAX,
@@ -135,6 +101,7 @@ enum xtrxll_sensors {
 	XTRXLL_ONEPPS_CAPTURED,
 	XTRXLL_REFCLK_CNTR,
 	XTRXLL_REFCLK_CLK,
+	XTRXLL_DAC_REG,
 
 	XTRXLL_PMIC0_VER,
 	XTRXLL_PMIC0_ID,
@@ -151,16 +118,33 @@ enum xtrxll_sensors {
 	XTRXLL_TEST_CNT_RXIQ_MALGN,
 
 	XTRXLL_HWID,
+
+	XTRXLL_CFG_NUM_RFIC,
+	XTRXLL_CFG_HAS_GPS,
+	XTRXLL_CFG_HAS_SIM_READER,
 };
 
 XTRXLL_API int xtrxll_get_sensor(struct xtrxll_dev* dev, unsigned sensorno,
 								 int* outval);
+
+enum param_pwr_ctrl {
+	PWR_CTRL_PDOWN = 0,
+	PWR_CTRL_BUSONLY = 1,
+	PWR_CTRL_ON = 2,
+};
 
 typedef enum xtrxll_params {
 	XTRXLL_PARAM_CLOCK_TYPE,
 	XTRXLL_PARAM_PWR_MODE,
 	XTRXLL_PARAM_PWR_VIO,
 	XTRXLL_PARAM_RX_DLY,
+	XTRXLL_PARAM_REF_DAC,
+	XTRXLL_PARAM_SWITCH_RX_ANT,
+	XTRXLL_PARAM_SWITCH_TX_ANT,
+	XTRXLL_PARAM_PWR_CTRL,
+	XTRXLL_PARAM_FE_CTRL,
+	XTRXLL_PARAM_EXT_CLK,
+	XTRXLL_PARAM_DSPFE_CMD,
 } xtrxll_params_t;
 
 XTRXLL_API int xtrxll_set_param(struct xtrxll_dev* dev, unsigned paramno,
@@ -232,11 +216,13 @@ XTRXLL_API int xtrxll_dma_tx_post(struct xtrxll_dev* dev, int chan, void* addr,
 typedef enum xtrxll_mode {
 	XTRXLL_FE_MODE_MIMO   = 0,
 	XTRXLL_FE_MODE_SISO   = 1,
+	XTRXLL_FE_MODE_SM_MSK = 1,
 
-	XTRXLL_FE_MODE_4X_ACC_OVER  = 4,
-	XTRXLL_FE_MODE_16X_ACC_OVER = 8,
-	XTRXLL_FE_MODE_16X_NO_ACC   = XTRXLL_FE_MODE_4X_ACC_OVER | XTRXLL_FE_MODE_16X_ACC_OVER,
-	XTRXLL_FE_MODE_OVER_MASK    = XTRXLL_FE_MODE_16X_NO_ACC,
+	XTRXLL_FE_MODE_RXDSP_BYPASS   = 0,
+	XTRXLL_FE_MODE_RXDSP_MODE1    = 4,
+	XTRXLL_FE_MODE_RXDSP_MODE2    = 8,
+	XTRXLL_FE_MODE_RXDSP_MODE3    = 12,
+	XTRXLL_FE_MODE_RXDSP_MASK     = 12,
 
 	XTRXLL_FE_MODE_INTER_OFF  = 8,
 	XTRXLL_FE_MODE_INTER_MASK = 7,
@@ -263,24 +249,6 @@ static inline int xtrxll_dma_tx_start(struct xtrxll_dev* dev, int chan,
 							XTRXLL_FE_MODE_MIMO, 0, fe, mode);
 }
 
-
-// Other
-XTRXLL_API int xtrxll_set_osc_dac(struct xtrxll_dev* dev, unsigned val);
-XTRXLL_API int xtrxll_get_osc_freq(struct xtrxll_dev* dev, uint32_t *regval);
-
-/*
-typedef enum xtrxll_mmcm_regs {
-	XTRXLL_MMCM_WR_MASK    = 0x0080,
-	XTRXLL_MMCM_REG_MASK   = 0x0100,
-	XTRXLL_MMCM_CLKSEL_OSC = 0x0200,
-	XTRXLL_MMCM_RESET      = 0x0400,
-	XTRXLL_MMCM_PWRDOWN    = 0x0800,
-} xtrxll_mmcm_regs_t;
-
-XTRXLL_API int xtrxll_set_txmmcm(struct xtrxll_dev* dev, uint16_t reg, uint16_t value);
-XTRXLL_API int xtrxll_get_txmmcm(struct xtrxll_dev* dev, uint16_t* value,
-								 uint8_t* locked, uint8_t* rdy);
-*/
 
 /**
  * @brief xtrxll_fill_repeat_buf

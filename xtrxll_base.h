@@ -43,7 +43,14 @@ struct xtrxll_base_dev {
 
 	struct xtrxll_base_dev* self; ///< Pointer to the original device
 	const char* id;
+
+	uint32_t hwid;
+	uint32_t internal_state[7]; ///< internal state (DO NOT TOUCH)
 };
+
+int xtrxll_base_dev_init(struct xtrxll_base_dev* dev,
+						  const struct xtrxll_ops *ops,
+						  const char* id);
 
 
 struct xtrxll_ops {
@@ -62,6 +69,7 @@ struct xtrxll_ops {
 
 	int (*spi_bulk)(struct xtrxll_base_dev* dev, uint32_t lmsno,
 					const uint32_t* out, uint32_t* in, size_t count);
+	int (*i2c_cmd)(struct xtrxll_base_dev* dev, uint32_t cmd, uint32_t *dout);
 
 	// RX DMA
 	int (*dma_rx_init)(struct xtrxll_base_dev* dev, int chan, unsigned buf_szs,
@@ -132,24 +140,8 @@ enum {
 };
 
 struct xtrxll_ctrl_ops {
-	int (*get_cfg)(struct xtrxll_base_dev* dev, enum xtrxll_cfg param, int* out);
-
-	int (*set_osc_dac)(struct xtrxll_base_dev* dev, unsigned val);
-	int (*get_osc_freq)(struct xtrxll_base_dev* dev, uint32_t *regval);
-
-	int (*lms7_pwr_ctrl)(struct xtrxll_base_dev* dev, uint32_t lmsno,
-						 unsigned ctrl_mask);
 	int (*get_sensor)(struct xtrxll_base_dev* dev, unsigned sensorno,
 					  int* outval);
-
-	int (*lms7_ant)(struct xtrxll_base_dev* dev, unsigned rx_ant,
-					unsigned tx_ant);
-
-	/*
-	int (*set_txmmcm)(struct xtrxll_base_dev* dev, uint16_t reg, uint16_t value);
-	int (*get_txmmcm)(struct xtrxll_base_dev* dev, uint16_t* value,
-					  uint8_t* locked, uint8_t* rdy);
-	*/
 
 	int (*drp_set)(struct xtrxll_base_dev* dev, unsigned drpno,
 				   uint16_t reg, uint16_t value,
@@ -172,8 +164,6 @@ struct xtrxll_ctrl_ops {
 
 	int (*set_param)(struct xtrxll_base_dev* dev, unsigned paramno, unsigned inval);
 };
-
-int xtrxll_base_fill_ctrlops(struct xtrxll_base_dev* dev, unsigned devid);
 
 #endif //XTRXLL_BASE_H
 

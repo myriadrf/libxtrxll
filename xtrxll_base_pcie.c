@@ -313,7 +313,7 @@ int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 		}
 		//if (((dev->tx_written - ncleared) & 0x3f) >= TXDMA_BUFFERS - 2)
 		//	return -EBUSY;
-		if (((dev->tx_written - ncleared) & 0x3f) >= TXDMA_BUFFERS - 2)
+		if (((dev->tx_written - ncleared) & 0x3f) >= TXDMA_BUFFERS - 1)
 			return -EBUSY;
 
 		nwr = dev->tx_written;
@@ -427,7 +427,7 @@ int xtrxllpciebase_repeat_tx_start(struct xtrxll_base_pcie_dma* dev,
 static unsigned get_max_samples_in_buffer(xtrxll_fe_t fe, xtrxll_mode_t mode,
 										  unsigned bufsize)
 {
-	if (mode == XTRXLL_FE_MODE_MIMO)
+	if ((mode & XTRXLL_FE_MODE_SM_MSK) == XTRXLL_FE_MODE_MIMO)
 		bufsize >>= 1;
 
 	switch (fe) {
@@ -473,14 +473,14 @@ int xtrxllpciebase_dma_start(struct xtrxll_base_pcie_dma* dev, int chan,
 			reg |= (1UL << (WR_RXDMA_FE_PAUSED + GP_PORT_WR_RXTXDMA_RXOFF));
 		}
 
-		switch (rxmode & XTRXLL_FE_MODE_OVER_MASK) {
-		case XTRXLL_FE_MODE_4X_ACC_OVER:
+		switch (rxmode & XTRXLL_FE_MODE_RXDSP_MASK) {
+		case XTRXLL_FE_MODE_RXDSP_MODE1:
 			reg |= 1UL << (WR_RXDMA_FE_DECIM_OFF + GP_PORT_WR_RXTXDMA_RXOFF);
 			break;
-		case XTRXLL_FE_MODE_16X_ACC_OVER:
+		case XTRXLL_FE_MODE_RXDSP_MODE2:
 			reg |= 2UL << (WR_RXDMA_FE_DECIM_OFF + GP_PORT_WR_RXTXDMA_RXOFF);
 			break;
-		case XTRXLL_FE_MODE_16X_NO_ACC:
+		case XTRXLL_FE_MODE_RXDSP_MODE3:
 			reg |= 3UL << (WR_RXDMA_FE_DECIM_OFF + GP_PORT_WR_RXTXDMA_RXOFF);
 			break;
 		default: break;

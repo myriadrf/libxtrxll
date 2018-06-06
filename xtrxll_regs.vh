@@ -30,7 +30,7 @@ localparam GP_PORT_WR_USB_CTRL    = 19;
 
 localparam GP_PORT_WR_USB_FIFO_CTRL = 20;
 localparam GP_PORT_WR_USB_FIFO_PTRS = 21;
-
+localparam GP_PORT_WR_FE_CMD        = 22;
 
 //RD
 localparam GP_PORT_RD_SPI_LMS7_0  = 0;
@@ -215,22 +215,19 @@ localparam GP_PORT_WR_RXTXDMA_RXV = 30;
 localparam GP_PORT_WR_RXTXDMA_TXV = 31;
 
 
-// Interrupts
-localparam INT_L_GPS_UART_TX  = 0;
-localparam INT_L_GPS_UART_RX  = 1;
-localparam INT_L_SIM_UART_TX  = 2;
-localparam INT_L_SIM_UART_RX  = 3;
-localparam INT_L_TEMP_ALARM   = 4;
-localparam INT_L_1PPS         = 5;
+localparam INT_1PPS         = 0;
+localparam INT_DMA_TX       = 1;
+localparam INT_DMA_RX       = 2;
+localparam INT_RFIC0_SPI    = 3;
+localparam INT_GPS_UART_TX  = 4;
+localparam INT_GPS_UART_RX  = 5;
+localparam INT_SIM_UART_TX  = 6;
+localparam INT_SIM_UART_RX  = 7;
+localparam INT_I2C          = 8;
+localparam INT_NCMD         = 9;
 
-// Direct MSI map
-localparam INT_H_LMS7_SPI     = 0;
-localparam INT_H_DMA_TX       = 1;
-localparam INT_H_DMA_RX       = 2;
-localparam INT_H_OTHER        = 3;
+localparam INT_COUNT        = 10;
 
-localparam INT_COUNT_L = 6;
-localparam INT_COUNT_H = 3;
 
 localparam INT_PCIE_I_FLAG = 15;
 

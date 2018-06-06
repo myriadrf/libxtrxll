@@ -31,50 +31,96 @@
 #include <memory.h>
 #include <stdlib.h>
 
+#define MAKE_I2C_CMD(RD, RDZSZ, WRSZ, DEVNO, DATA)  (\
+	(((RD) & 1U) << 31) | \
+	(((RDZSZ) & 7U) << 28) | \
+	(((WRSZ) & 3U) << 26) | \
+	(((DEVNO) & 3U) << 24) | \
+	(((DATA) & 0xffffffu) << 0))
+
+enum xtrx_i2c_lut {
+	XTRX_I2C_PMIC_FPGA = 0,
+	XTRX_I2C_DAC = 1,
+	XTRX_I2C_TMP = 2,
+	XTRX_I2C_PMIC_LMS = 3,
+};
+
+enum fwids {
+	FWID_XTRX_R3 = 0,
+	FWID_XTRX_R4 = 4,
+};
+
+struct internal_base_state {
+	uint8_t rx_ant;
+	uint8_t tx_ant;
+
+	uint8_t rfic_ctrl;
+	uint8_t ext_clk;
+};
+
+#define GET_FWID(hwid) ((hwid)>>24)
 
 static int lp8758_get(struct xtrxll_base_dev* dev, uint8_t bus, uint8_t reg,
 					  uint8_t* out)
 {
 	uint32_t tmp;
-	int res = dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TMP102,
-									((bus ? 1U : 0) << 25) | (1 << 24) | (reg));
-	if (res)
-		return res;
-
-	usleep(25000);
-
-	res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_TMP102, &tmp);
-	*out = tmp & 0xff;
-
-	usleep(25000);
+	int res = dev->selfops->i2c_cmd(dev->self, MAKE_I2C_CMD(1, 0, 1, bus, reg), &tmp);
+	if (!res) {
+		*out = tmp & 0xff;
+	}
 	return res;
 }
 
 static int lp8758_set(struct xtrxll_base_dev* dev, uint8_t bus, uint8_t reg,
 					  uint8_t in)
 {
-	return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TMP102,
-								 ((bus ? 1U : 0) << 25) | reg | ((uint32_t)in << 8));
+	return dev->selfops->i2c_cmd(dev->self,
+								 MAKE_I2C_CMD(0, 0, 2, bus, reg | ((uint32_t)in << 8)), NULL);
 }
 
-enum {
-	I2C_BUS1 = 0,
-	I2C_BUS2 = 1,
-};
+static int tmp108_get(struct xtrxll_base_dev* dev, unsigned reg, int *outval)
+{
+	uint32_t tmp = (uint32_t)-1;
+	int res = dev->selfops->i2c_cmd(dev->self, MAKE_I2C_CMD(1, 1, 1, XTRX_I2C_TMP, reg),
+								&tmp);
+	*outval = (int16_t)(htole16(tmp));
+	return res;
+}
 
-static uint8_t get_voltage(int vin)
+static int ltc2606_set_cur(struct xtrxll_base_dev* dev, unsigned val)
+{
+	uint32_t cmd = (0x30) | (((val >> 8) & 0xff) << 8) | ((val & 0xff) << 16);
+	return dev->selfops->i2c_cmd(dev->self,
+								 MAKE_I2C_CMD(0, 0, 3, XTRX_I2C_TMP, cmd), NULL);
+}
+
+static int mcp4725_set_cur(struct xtrxll_base_dev* dev, unsigned val)
+{
+	uint32_t cmd = (((val >> 12) & 0x0f)) | (((val >> 4) & 0xff) << 8);
+	return dev->selfops->i2c_cmd(dev->self,
+								 MAKE_I2C_CMD(0, 0, 2, XTRX_I2C_DAC, cmd), NULL);
+}
+
+static int mcp4725_get_cur(struct xtrxll_base_dev* dev, uint32_t* oval)
+{
+	return dev->selfops->i2c_cmd(dev->self,
+								 MAKE_I2C_CMD(1, 3, 0, XTRX_I2C_DAC, 0), oval);
+}
+
+
+static uint8_t get_voltage(unsigned vin)
 {
 	if (vin > 3330) {
 		return 0xfc;
 	} else if (vin > 1400) {
-		int x = (vin - 1400) / 20;
-		return 0x9D + x;
+		unsigned x = (vin - 1400) / 20;
+		return (uint8_t)(0x9D + x);
 	} else if (vin > 730) {
-		int x = (vin - 730) / 5;
-		return 0x18 + x;
+		unsigned x = (vin - 730) / 5;
+		return (uint8_t)(0x18 + x);
 	} else if (vin > 500) {
-		int x = (vin - 500) / 10;
-		return x;
+		unsigned x = (vin - 500) / 10;
+		return (uint8_t)x;
 	}
 
 	return 0;
@@ -89,6 +135,28 @@ enum xtrx_power_modes {
 	XTRX_PWR_PERF_GOOD = 5,
 	XTRX_PWR_PERF_BEST = 6,
 	XTRX_PWR_PERF_MAX = 7,
+
+	XTRX_AUX_SKIP = 0,
+	XTRX_AUX_LOW = 1,
+	XTRX_AUX_NORM = 2,
+	XTRX_AUX_HIGH = 3,
+	XTRX_AUX_MAX = 4,
+	XTRX_AUX_MAX2 = 5,
+	XTRX_AUX_MAX3 = 6,
+	XTRX_AUX_MAX4 = 7,
+
+	XTRX_DIG12_SKIP = 0,
+	XTRX_DIG12_LOW = 1,
+	XTRX_DIG12_NORM = 2,
+	XTRX_DIG12_HIGH = 3,
+	XTRX_DIG12_MAX = 4,
+	XTRX_DIG12_MAX2 = 5,
+	XTRX_DIG12_MAX3 = 6,
+	XTRX_DIG12_MAX4 = 7,
+};
+
+enum {
+	XTRX_PWR_V_DROP = 40,
 };
 
 enum xtrx_power_out {
@@ -117,8 +185,76 @@ enum xtrx_vio {
 	V_IO_HI  = 3300,
 };
 
-static int xtrxllr3_lms7pwr_set_mode(struct xtrxll_base_dev* dev, unsigned muxmode)
+
+static int _xtrxllr3_io_set(struct xtrxll_base_dev* dev, unsigned vio_mv)
 {
+	if (vio_mv < 1000 || vio_mv > 3360)
+		return -EINVAL;
+
+	int res = lp8758_set(dev, XTRX_I2C_PMIC_FPGA, BUCK1_VOUT,  get_voltage(vio_mv));
+	if (res)
+		return res;
+
+	XTRXLL_LOG(XTRXLL_INFO, "FPGA V_IO set to %04dmV\n", vio_mv);
+	return 0;
+}
+
+static int _xtrxllr3_d12_set(struct xtrxll_base_dev* dev, unsigned vd12_mv)
+{
+	if (vd12_mv < 1000 || vd12_mv > 1370)
+		return -EINVAL;
+
+	int res = lp8758_set(dev, XTRX_I2C_PMIC_FPGA, BUCK2_VOUT,  get_voltage(vd12_mv));
+	if (res)
+		return res;
+
+	XTRXLL_LOG(XTRXLL_INFO, "FPGA V_D12 / LMS DVDD set to %04dmV\n", vd12_mv);
+	return 0;
+}
+
+static int _xtrxllr3_aux_set(struct xtrxll_base_dev* dev, unsigned vaux_mv)
+{
+	if (vaux_mv < 1600 || vaux_mv > 2100)
+		return -EINVAL;
+
+	int res = lp8758_set(dev, XTRX_I2C_PMIC_FPGA, BUCK3_VOUT,  get_voltage(vaux_mv));
+	if (res)
+		return res;
+
+	XTRXLL_LOG(XTRXLL_INFO, "FPGA V_AUX set to %04dmV\n", vaux_mv);
+	return 0;
+}
+
+static int _xtrxllr3_pmic_lms_set(struct xtrxll_base_dev* dev, unsigned extra_drop)
+{
+	int res;
+
+	res = lp8758_set(dev, XTRX_I2C_PMIC_LMS, BUCK0_VOUT,  get_voltage(V_LMS_1V8 + extra_drop));
+	if (res)
+		return res;
+	res = lp8758_set(dev, XTRX_I2C_PMIC_LMS, BUCK1_VOUT,  get_voltage(V_XTRX_XO + extra_drop));
+	if (res)
+		return res;
+	res = lp8758_set(dev, XTRX_I2C_PMIC_LMS, BUCK2_VOUT,  get_voltage(V_LMS_1V4 + extra_drop));
+	if (res)
+		return res;
+	res = lp8758_set(dev, XTRX_I2C_PMIC_LMS, BUCK3_VOUT,  get_voltage(V_LMS_1V2 + extra_drop));
+	if (res)
+		return res;
+
+	XTRXLL_LOG(XTRXLL_INFO, "LMS PMIC: DCDC out set to V18=%04dmV V33=%04dmV V14=%04dmV V12=%04dmV\n",
+			   V_LMS_1V8 + extra_drop,
+			   V_XTRX_XO + extra_drop,
+			   V_LMS_1V4 + extra_drop,
+			   V_LMS_1V2 + extra_drop);
+	return 0;
+}
+
+#define MAXE_MUX(mode, aux, dig12) (((mode) & 0xff) | (((aux) & 0xf) >> 8) | (((dig12) & 0xf) >> 12))
+
+static int _xtrxllr3_lms7pwr_set_mode(struct xtrxll_base_dev* dev, unsigned muxmode)
+{
+	int res;
 	unsigned mode = (muxmode & 0xff);
 	unsigned aux_mode = ((muxmode >> 8) & 0x0f);
 	unsigned dig12_mode = ((muxmode >> 12) & 0x0f);
@@ -130,11 +266,9 @@ static int xtrxllr3_lms7pwr_set_mode(struct xtrxll_base_dev* dev, unsigned muxmo
 	if (dig12_mode > 7)
 		return -EINVAL;
 
-	unsigned drop_voltage = 40 * mode;
-	lp8758_set(dev, I2C_BUS2, BUCK0_VOUT,  get_voltage(V_LMS_1V8 + drop_voltage));
-	lp8758_set(dev, I2C_BUS2, BUCK1_VOUT,  get_voltage(V_XTRX_XO + drop_voltage));
-	lp8758_set(dev, I2C_BUS2, BUCK2_VOUT,  get_voltage(V_LMS_1V4 + drop_voltage));
-	lp8758_set(dev, I2C_BUS2, BUCK3_VOUT,  get_voltage(V_LMS_1V2 + drop_voltage));
+	res = _xtrxllr3_pmic_lms_set(dev, XTRX_PWR_V_DROP * mode);
+	if (res)
+		return res;
 
 	if (aux_mode > 0) {
 		unsigned auxv = V_AUX_NORM;
@@ -152,8 +286,9 @@ static int xtrxllr3_lms7pwr_set_mode(struct xtrxll_base_dev* dev, unsigned muxmo
 			auxv = V_AUX_MAX + 60;
 		}
 
-		lp8758_set(dev, I2C_BUS1, BUCK3_VOUT,  get_voltage(auxv));
-		XTRXLL_LOG(XTRXLL_WARNING, "V_AUX set to %d\n", auxv);
+		res = _xtrxllr3_aux_set(dev, auxv);
+		if (res)
+			return res;
 	}
 
 	if (dig12_mode > 0) {
@@ -172,142 +307,120 @@ static int xtrxllr3_lms7pwr_set_mode(struct xtrxll_base_dev* dev, unsigned muxmo
 			digv = V_DIG12_MAX + 30;
 		}
 
-		lp8758_set(dev, I2C_BUS1, BUCK2_VOUT,  get_voltage(digv));
-		XTRXLL_LOG(XTRXLL_WARNING, "V_D12 set to %d\n", digv);
+		res = _xtrxllr3_d12_set(dev, digv);
+		if (res)
+			return res;
 	}
 
 	return 0;
 }
 
-static int xtrxllr3_io_set(struct xtrxll_base_dev* dev, unsigned vio_mv)
-{
-	if (vio_mv < 1000 || vio_mv > 3300)
-		return -EINVAL;
+enum pmic_ctrl {
+	PMIC_CH_ENABLE = 0x88,
+	PMIC_CH_DISABLE = 0xc8,
+};
 
-	lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(vio_mv));
-	XTRXLL_LOG(XTRXLL_WARNING, "V_IO set to %d\n", vio_mv);
-	return 0;
-}
-
-
-#if 0
-static void xtrxllr3_io_set_mode(struct xtrxll_base_dev* dev, enum xtrx_power_modes mode)
-{
-	switch (mode) {
-	case XTRX_PWR_ECONOMY:
-		lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(V_IO_ECO));
-		break;
-	case XTRX_PWR_OPTIMAL:
-		lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(V_IO_OPT));
-		break;
-	case XTRX_PWR_PERFORMANCE:
-		lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(V_IO_PERF));
-		break;
-	case XTRX_PWR_HIGHEST:
-		lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(V_IO_HI));
-		break;
-	}
-}
-#endif
-
-
-
-
-static void lp8758_en(struct xtrxll_base_dev* dev, int en, int en3v3)
-{
-	// Set voltages to channels
-	// 0 - 2.05          -> 1.8
-	// 1 - 3.3 (+bypass) -> 3.0
-	// 2 - 1.65          -> 1.4
-	// 3 - 1.5           -> 1.25
-
-	uint8_t b_ctrl = (en) ? 0x88 : 0xc8;
-
-	lp8758_set(dev, I2C_BUS2, BUCK0_VOUT, 0x9D + 32 - 2);
-	lp8758_set(dev, I2C_BUS2, BUCK1_VOUT, 0x9D + 95);
-	//lp8758_set(dev, I2C_BUS2, BUCK1_VOUT, 0x9D + 30); Can be lowered up to 2v0
-	lp8758_set(dev, I2C_BUS2, BUCK2_VOUT, 0x9D + 12 - 2);
-	lp8758_set(dev, I2C_BUS2, BUCK3_VOUT, 0x9D + 5 - 2);
-
-	lp8758_set(dev, I2C_BUS2, BUCK0_CTRL1, b_ctrl);
-	lp8758_set(dev, I2C_BUS2, BUCK1_CTRL1, (en3v3) ? 0x88 : 0xc8);
-	lp8758_set(dev, I2C_BUS2, BUCK2_CTRL1, b_ctrl);
-	lp8758_set(dev, I2C_BUS2, BUCK3_CTRL1, b_ctrl);
-
-	// BUS 1
-	// lp8758_set(dev, I2C_BUS1, BUCK1_VOUT,  get_voltage(3300));
-	lp8758_set(dev, I2C_BUS1, BUCK1_CTRL1, 0x88);
-
-	if (en) {
-		// Wait for power ramp up
-		usleep(1000);
-	}
-}
-
-static int tmp108_get(struct xtrxll_base_dev* dev, unsigned reg, int *outval)
+static int lp8758_en(struct xtrxll_base_dev* dev, int en, int en3v3)
 {
 	int res;
-	uint32_t tmp;
+	uint8_t b_ctrl = (en) ? PMIC_CH_ENABLE : PMIC_CH_DISABLE;
 
-	res = dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TMP102,
-								(3 << 26) | (1 << 24) | reg);
-	usleep(10000);
-	res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_TMP102, &tmp);
+	if (en) {
+		// BUS 0 -- LMS PMIC
+		res = _xtrxllr3_pmic_lms_set(dev, XTRX_PWR_ECONOMY * XTRX_PWR_V_DROP);
+		if (res)
+			return res;
+	}
+
+	res = lp8758_set(dev, XTRX_I2C_PMIC_LMS, BUCK1_CTRL1, (en3v3) ? PMIC_CH_ENABLE : PMIC_CH_DISABLE);
+	if (res)
+		return res;
+	res = lp8758_set(dev, XTRX_I2C_PMIC_LMS, BUCK0_CTRL1, b_ctrl);
+	if (res)
+		return res;
+	res = lp8758_set(dev, XTRX_I2C_PMIC_LMS, BUCK2_CTRL1, b_ctrl);
+	if (res)
+		return res;
+	res = lp8758_set(dev, XTRX_I2C_PMIC_LMS, BUCK3_CTRL1, b_ctrl);
 	if (res)
 		return res;
 
-	*outval = (int16_t)(htobe16(tmp));
-	return res;
+	if (en) {
+		// BUS 1 -- FPGA PMIC
+		res = _xtrxllr3_io_set(dev, 1800);
+		if (res)
+			return res;
+	}
+
+	return 0;
 }
 
-static int xtrvxllv0_set_osc_dac(struct xtrxll_base_dev* dev, unsigned val)
+static int _xtrxll_calc_refclk(struct xtrxll_base_dev* dev, unsigned *outclk)
 {
-#if 0
-	return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_DAC_SPI, val);
-#endif
-	return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TMP102,
-								 (2 << 26) | (0x30) | (((val >> 8) & 0xff) << 8) | ((val & 0xff) << 16));
-}
-
-static int xtrvxllv0_get_osc_freq(struct xtrxll_base_dev* dev, uint32_t *regval)
-{
-	return dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_ONEPPS, regval);
-}
-
-static int xtrvxllv0_lms7_pwr_ctrl(struct xtrxll_base_dev* dev, uint32_t lmsno, unsigned ctrl_mask)
-{
+	uint32_t t = 0, tmp;
 	int res;
-	if (!(lmsno & XTRXLL_LMS7_0)) {
-		return -EINVAL;
+	unsigned i, j;
+	unsigned cur, prev = 0;
+	unsigned pval = 0, cval;
+	unsigned delta;
+	const unsigned bus_clk = 125000000U;
+	*outclk = 0;
+
+	for (i = 0, j = 0; i < 20 && j < 2; i++) {
+		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_REF_OSC, &tmp);
+		if (res)
+			return res;
+
+		cur = (tmp >> 28) & 0xf;
+		cval = tmp & 0xffffff;
+
+		if (cur == prev) {
+			usleep(5000);
+			continue;
+		}
+		if (prev != 0) {
+			delta = (pval > cval) ? pval - cval : cval - pval;
+		} else {
+			delta = (unsigned)-1;
+		}
+
+		prev = cur;
+		pval = cval;
+
+		if (delta > 4)
+			continue;
+
+		t += cval;
+		j++;
 	}
+	if (j < 2)
+		return -ENOENT;
 
-	uint32_t powermask = 0;
+	*outclk = (unsigned)(((uint64_t)t * bus_clk) / 65536 / 16 / j);
+	return 0;
+}
 
-	powermask |= (1<<GP_PORT_XTRX_ENBPVIO_N);
-	powermask |= (1<<GP_PORT_XTRX_ENBP3V3_N);
+static int _xtrxr3_board_pwr_ctrl(struct xtrxll_base_dev* dev, unsigned param)
+{
+	int en_lms = (param == PWR_CTRL_ON);
+	int en_b33 = (param != PWR_CTRL_PDOWN);
 
+	return lp8758_en(dev, en_lms, en_b33);
+}
 
-	if (ctrl_mask & XTRXLL_LMS7_RESET_PIN) powermask |= (1<<GP_PORT_LMS_CTRL_RESET) | (1<<GP_PORT_LMS_CTRL_DIGRESET);
-	if (ctrl_mask & XTRXLL_LMS7_GPWR_PIN)  powermask |= (1<<GP_PORT_LMS_CTRL_GPWR);
-	if (ctrl_mask & XTRXLL_LMS7_RXEN_PIN)  powermask |= (1<<GP_PORT_LMS_CTRL_RXEN);
-	if (ctrl_mask & XTRXLL_LMS7_TXEN_PIN)  powermask |= (1<<GP_PORT_LMS_CTRL_TXEN);
+static int _xtrxr3_board_combctrl(struct xtrxll_base_dev* dev)
+{
+	struct internal_base_state* intr = (struct internal_base_state*)dev->internal_state;
+	uint32_t cmd = 0;
 
-	if (ctrl_mask & XTRXLL_LMS7_RX_GEN)    powermask |= (1<<GP_PORT_LMS_FCLK_RX_GEN);
-	if (ctrl_mask & XTRXLL_LMS7_RX_TERM_D) powermask |= (1<<GP_PORT_LMS_RX_TERM_DIS);
+	cmd |= (1<<GP_PORT_XTRX_ENBPVIO_N);
+	cmd |= (1<<GP_PORT_XTRX_ENBP3V3_N);
 
-	if (ctrl_mask & XTRXLL_EXT_CLK)        powermask |= (1<<GP_PORT_XTRX_EXT_CLK) | (1<<GP_PORT_XTRX_PD_TCXO);
+	if (intr->ext_clk)
+		cmd |= (1<<GP_PORT_XTRX_EXT_CLK) | (1<<GP_PORT_XTRX_PD_TCXO);
 
-	if ((ctrl_mask & XTRXLL_LMS7_GPWR_PIN) || (ctrl_mask & XTRXLL_DCDC_ON)) {
-		lp8758_en(dev, 1, 1);
-	}
-
-	res = dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_LMS_CTRL, powermask);
-
-	if (!((ctrl_mask & XTRXLL_LMS7_GPWR_PIN) || (ctrl_mask & XTRXLL_DCDC_ON))) {
-		lp8758_en(dev, 0, 1);
-	}
-
-	return res;
+	cmd |= intr->rfic_ctrl;
+	return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_LMS_CTRL, cmd);
 }
 
 static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, int* outval)
@@ -316,24 +429,34 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 	uint32_t tmp;
 
 	switch (sensorno) {
+	case XTRXLL_CFG_NUM_RFIC:
+		*outval = 1;
+		return 0;
+	case XTRXLL_CFG_HAS_GPS:
+		*outval = 1;
+		return 0;
+	case XTRXLL_CFG_HAS_SIM_READER:
+		*outval = 1;
+		return 0;
+
 	case XTRXLL_PMIC0_VER:
 		*outval = 0;
-		return lp8758_get(dev->self, 0, DEV_REV, (uint8_t*)outval);
+		return lp8758_get(dev->self, XTRX_I2C_PMIC_FPGA, DEV_REV, (uint8_t*)outval);
 	case XTRXLL_PMIC0_ID:
 		*outval = 0;
-		return lp8758_get(dev->self, 0, OTP_REV, (uint8_t*)outval);
+		return lp8758_get(dev->self, XTRX_I2C_PMIC_FPGA, OTP_REV, (uint8_t*)outval);
 	case XTRXLL_PMIC1_VER:
 		*outval = 0;
-		return lp8758_get(dev->self, 1, DEV_REV, (uint8_t*)outval);
+		return lp8758_get(dev->self, XTRX_I2C_PMIC_LMS, DEV_REV, (uint8_t*)outval);
 	case XTRXLL_PMIC1_ID:
 		*outval = 0;
-		return lp8758_get(dev->self, 1, OTP_REV, (uint8_t*)outval);
+		return lp8758_get(dev->self, XTRX_I2C_PMIC_LMS, OTP_REV, (uint8_t*)outval);
 
 	case XTRXLL_PMIC0_CTRL1:
 	case XTRXLL_PMIC1_CTRL1:
 	{
 #define NUM 4
-		uint8_t busno = (sensorno == XTRXLL_PMIC0_CTRL1) ? 0 : 1;
+		uint8_t busno = (sensorno == XTRXLL_PMIC0_CTRL1) ? XTRX_I2C_PMIC_FPGA : XTRX_I2C_PMIC_LMS;
 		uint8_t v[NUM];
 		uint8_t regs[NUM] = { BUCK0_CTRL1, BUCK1_CTRL1, BUCK2_CTRL1, BUCK3_CTRL1 };
 		int i;
@@ -356,71 +479,35 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 		return tmp108_get(dev->self, 3, outval);
 	case XTRXLL_OSC_LATCHED:
 		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_ONEPPS, &tmp);
-		*outval = tmp;
+		*outval = (int)(tmp & 0x0fffffff);
 		return res;
 	case XTRXLL_REFCLK_CNTR:
 		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_REF_OSC, &tmp);
-		*outval = tmp;
+		*outval = (int)tmp;
 		return res;
 	case XTRXLL_REFCLK_CLK:
-	{
-		uint32_t t = 0;
-		int i, j;
-		int cur, prev = 0;
-		*outval = 0;
-
-		for (i = 0, j = 0; i < 16 && j < 4; i++) {
-			res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_REF_OSC, &tmp);
-			if (res)
-				return res;
-
-			cur = (tmp >> 16) & 0xff;
-			if (cur == prev) {
-				usleep(300);
-				continue;
-			}
-			t += tmp & 0xffff;
-			j++;
-		}
-		if (j < 2)
-			return -ENOENT;
-
-		*outval = ((int64_t)t * 125000000) / 65536 / j;
-		return 0;
-	}
-	case XTRXLL_ONEPPS_CAPTURED:
-		// FIXME!!!!
-		//*outval = pread(dev->fd, &reg, sizeof(reg), XTRX_KERN_1PPS_EVENTS);
-		//return ( *outval < 0 ) ? *outval : 0;
-		return 0;
+		return _xtrxll_calc_refclk(dev->self, (unsigned*)outval);
 	case XTRXLL_TEST_CNT_RXIQ_MISS:
 		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_RXIQ_MISS,
 								   &tmp);
-		*outval = tmp;
+		*outval = (int)tmp;
 		return res;
 	case XTRXLL_TEST_CNT_RXIQ_MALGN:
 		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_RXIQ_ODD,
 								   &tmp);
-		*outval = tmp;
+		*outval = (int)tmp;
 		return res;
 	case XTRXLL_HWID:
-		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_HWCFG,
-								   &tmp);
-		*outval = tmp;
-		return res;
+		*outval = (int)dev->hwid;
+		return 0;
+	case XTRXLL_DAC_REG:
+		res = mcp4725_get_cur(dev->self, &tmp);
+		if (res)
+			return res;
+		*outval = ((tmp) << 8) >> 16;
+		return 0;
 	default:
 		return -EINVAL;
-	}
-	return 0;
-}
-
-static int xtrvxllv0_get_cfg(struct xtrxll_base_dev* dev, enum xtrxll_cfg param, int* out)
-{
-	switch (param) {
-	case XTRXLL_CFG_NUM_LMS7:        *out = 1; return 0;
-	case XTRXLL_CFG_HAS_GPS:         *out = 1; return 0;
-	case XTRXLL_CFG_HAS_SIM_READER:  *out = 1; return 0;
-	default:     return -EINVAL;
 	}
 }
 
@@ -489,49 +576,6 @@ static int xtrvxllv0_drp_get(struct xtrxll_base_dev* dev, unsigned drpno,
 	return 0;
 }
 
-#if 0
-static int xtrvxllv0_set_txmmcm(struct xtrxll_base_dev* dev, uint16_t reg, uint16_t value)
-{
-	uint32_t regout = value | (((uint32_t)reg & (XTRXLL_MMCM_WR_MASK - 1)) << 16);
-	if (reg & XTRXLL_MMCM_REG_MASK) {
-		regout |= (1 << GP_PORT_TXMMCM_REGEN);
-		regout |= (reg & XTRXLL_MMCM_WR_MASK) ? (1 << GP_PORT_TXMMCM_REGWR) : 0;
-	} else {
-		regout |= (reg & XTRXLL_MMCM_CLKSEL_OSC) ? (1 << GP_PORT_TXMMCM_CLKSEL) : 0;
-		regout |= (reg & XTRXLL_MMCM_RESET) ? (1 << GP_PORT_TXMMCM_RESET) : 0;
-		regout |= (reg & XTRXLL_MMCM_PWRDOWN) ? (1 << GP_PORT_TXMMCM_PWRDOWN) : 0;
-	}
-
-	return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TXMMCM, regout);
-}
-
-static int xtrvxllv0_get_txmmcm(struct xtrxll_base_dev* dev, uint16_t* value,
-					  uint8_t* locked, uint8_t* rdy)
-{
-	uint32_t regin;
-	int res;
-	res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_TXMMCM, &regin);
-	if (res)
-		return res;
-
-	XTRXLL_LOG(XTRXLL_DEBUG, "XTRX %s: MMCM -> %04x %c%c%c%c\n",
-			   dev->id,
-			   regin & 0xffff,
-			   (regin & (1 << (GP_PORT_IN_DRP0 + GP_PORT_IN_MMCM_LOCKED))) ? 'L' : '-',
-			   1/*(regin & (1 << GP_PORT_TXMMCM_RDY))*/ ? 'R' : '-',
-			   (regin & (1 << (GP_PORT_IN_DRP0 + GP_PORT_IN_MMCM_STOPPED))) ? 'S' : '-',
-			   (regin & (1 << (GP_PORT_IN_DRP0 + GP_PORT_IN_MMCM_STOPPEDF))) ? 'F' : '-');
-
-	if (value)
-		*value = regin & 0xffff;
-	if (locked)
-		*locked = (regin & (1 << (GP_PORT_IN_DRP0 + GP_PORT_IN_MMCM_LOCKED))) ? 1 : 0;
-	if (rdy)
-		*rdy = 1; // (regin & (1 << GP_PORT_TXMMCM_RDY)) ? 1 : 0;
-	return 0;
-}
-#endif
-
 static int xtrvxllv0_issue_timmed_command(struct xtrxll_base_dev* dev,
 									   wts32_t time,
 									   unsigned route,
@@ -559,7 +603,7 @@ static int xtrvxllv0_issue_timmed_command(struct xtrxll_base_dev* dev,
 	if (res)
 		return res;
 
-	/* we add facked '| (1 << TC_TS_BITS)' to data to detect incorrect word order in 64 bit writting */
+	/* we add faked '| (1 << TC_TS_BITS)' to data to detect incorrect word order in 64 bit writting */
 	//internal_xtrxll_reg_out_dual(dev, GP_PORT_WR_TCMD_D, data | (1 << TC_TS_BITS), (time & TS_WTS_INTERNAL_MASK) | (route << TC_TS_BITS));
 	return 0;
 }
@@ -651,35 +695,64 @@ static int xtrvxllv0_mem_rb32(struct xtrxll_base_dev* dev, uint32_t xtrx_addr,
 	return (int)mwords;
 }
 
+static int xtrvxllv0_set_osc_dac(struct xtrxll_base_dev* dev, unsigned val)
+{
+	if (val > 65535)
+		val = 65535;
+
+	if (GET_FWID(dev->hwid) == FWID_XTRX_R4)
+		return mcp4725_set_cur(dev, val);
+
+	return ltc2606_set_cur(dev, val);
+}
+
 static int xtrvxllv0_set_param(struct xtrxll_base_dev* dev, unsigned paramno, unsigned param)
 {
+	struct internal_base_state* intr = (struct internal_base_state*)dev->internal_state;
+
 	switch (paramno) {
 	case XTRXLL_PARAM_CLOCK_TYPE:
-	{
 		return -EINVAL;
-	}
 	case XTRXLL_PARAM_PWR_MODE:
-		return xtrxllr3_lms7pwr_set_mode(dev, param);
+		return _xtrxllr3_lms7pwr_set_mode(dev, param);
 	case XTRXLL_PARAM_PWR_VIO:
-		return xtrxllr3_io_set(dev, param);
+		return _xtrxllr3_io_set(dev, param);
 	case XTRXLL_PARAM_RX_DLY:
 		return dev->selfops->reg_out(dev->self,
 									 UL_GP_ADDR + GP_PORT_WR_LMS_CTRL,
 									 ((param << 17) | (1 <<16)));
+	case XTRXLL_PARAM_REF_DAC:
+		return xtrvxllv0_set_osc_dac(dev, param);
+	case XTRXLL_PARAM_SWITCH_RX_ANT:
+		intr->rx_ant = (uint8_t)param;
+		return xtrvxllv0_lms7_ant(dev, intr->rx_ant, intr->tx_ant);
+	case XTRXLL_PARAM_SWITCH_TX_ANT:
+		intr->tx_ant = (uint8_t)param;
+		return xtrvxllv0_lms7_ant(dev, intr->rx_ant, intr->tx_ant);
+	case XTRXLL_PARAM_PWR_CTRL:
+		return _xtrxr3_board_pwr_ctrl(dev, param);
+	case XTRXLL_PARAM_FE_CTRL:
+		if (intr->rfic_ctrl != (uint8_t)param) {
+			intr->rfic_ctrl = (uint8_t)param;
+			return _xtrxr3_board_combctrl(dev);
+		}
+		return 0;
+	case XTRXLL_PARAM_EXT_CLK:
+		if (intr->ext_clk != (uint8_t)param) {
+			intr->ext_clk = (uint8_t)param;
+			return _xtrxr3_board_combctrl(dev);
+		}
+		return 0;
+	case XTRXLL_PARAM_DSPFE_CMD:
+		return dev->selfops->reg_out(dev->self,
+									 UL_GP_ADDR + GP_PORT_WR_FE_CMD, param);
 	default:
 		return -EINVAL;
 	}
 }
 
 const static struct xtrxll_ctrl_ops s_xtrx_base_ops = {
-	.get_cfg = xtrvxllv0_get_cfg,
-
-	.lms7_pwr_ctrl = xtrvxllv0_lms7_pwr_ctrl,
-	.lms7_ant = xtrvxllv0_lms7_ant,
 	.get_sensor = xtrvxllv0_get_sensor,
-
-	.set_osc_dac = xtrvxllv0_set_osc_dac,
-	.get_osc_freq = xtrvxllv0_get_osc_freq,
 
 	.drp_set = xtrvxllv0_drp_set,
 	.drp_get = xtrvxllv0_drp_get,
@@ -695,13 +768,30 @@ const static struct xtrxll_ctrl_ops s_xtrx_base_ops = {
 };
 
 
-
-int xtrxll_base_fill_ctrlops(struct xtrxll_base_dev* dev, unsigned devid)
+int xtrxll_base_dev_init(struct xtrxll_base_dev* dev,
+						  const struct xtrxll_ops* ops,
+						  const char* id)
 {
-	if (devid != 0) {
-		return -ENOTSUP;
+	dev->self = dev;
+	dev->selfops = ops;
+	dev->id = id;
+	dev->ctrlops = &s_xtrx_base_ops;
+	memset(&dev->internal_state, 0, sizeof(dev->internal_state));
+
+	int res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_HWCFG,
+											  &dev->hwid);
+	if (res)
+		return res;
+
+	switch (GET_FWID(dev->hwid)) {
+	case FWID_XTRX_R3:
+		XTRXLL_LOG(XTRXLL_INFO, "XTRX %s: XTRX Rev3 (%08x)\n", dev->id, dev->hwid);
+		return 0;
+	case FWID_XTRX_R4:
+		XTRXLL_LOG(XTRXLL_INFO, "XTRX %s: XTRX Rev4 (%08x)\n", dev->id, dev->hwid);
+		return 0;
 	}
 
-	dev->ctrlops = &s_xtrx_base_ops;
-	return 0;
+	XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Unrecognized HWID %08x!\n", dev->id, dev->hwid);
+	return -ENOTSUP;
 }
