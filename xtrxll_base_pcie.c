@@ -313,7 +313,7 @@ int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 		}
 		//if (((dev->tx_written - ncleared) & 0x3f) >= TXDMA_BUFFERS - 2)
 		//	return -EBUSY;
-		if (((dev->tx_written - ncleared) & 0x3f) >= TXDMA_BUFFERS - 2)
+		if (((dev->tx_written - ncleared) & 0x3f) >= TXDMA_BUFFERS - 1)
 			return -EBUSY;
 
 		nwr = dev->tx_written;
