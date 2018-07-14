@@ -365,27 +365,27 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 	case XTRXLL_REFCLK_CLK:
 	{
 		uint32_t t = 0;
-		int i, j;
-		int cur, prev = 0;
+		unsigned i, j;
+		unsigned cur, prev = 0;
 		*outval = 0;
 
-		for (i = 0, j = 0; i < 16 && j < 4; i++) {
+		for (i = 0, j = 0; i < 256 && j < 4; i++) {
 			res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_REF_OSC, &tmp);
 			if (res)
 				return res;
 
-			cur = (tmp >> 16) & 0xff;
+			cur = (tmp >> 28) & 0xf;
 			if (cur == prev) {
 				usleep(300);
 				continue;
 			}
-			t += tmp & 0xffff;
+			t += tmp & 0xffffff;
 			j++;
 		}
 		if (j < 2)
 			return -ENOENT;
 
-		*outval = ((int64_t)t * 125000000) / 65536 / j;
+		*outval = (int)(((uint64_t)t * 125000000UL) / 65536 / 16 / j);
 		return 0;
 	}
 	case XTRXLL_ONEPPS_CAPTURED:
