@@ -95,23 +95,24 @@ static int mcp4725_set_cur(struct xtrxll_base_dev* dev, unsigned val)
 
 static int mcp4725_get_cur(struct xtrxll_base_dev* dev, uint32_t* oval)
 {
-	return dev->selfops->i2c_cmd(dev->self, MAKE_I2C_CMD(1, 3, 0, XTRX_I2C_DAC, 0), oval);
+	return dev->selfops->i2c_cmd(dev->self,
+								 MAKE_I2C_CMD(1, 3, 0, XTRX_I2C_DAC, 0), oval);
 }
 
 
-static uint8_t get_voltage(int vin)
+static uint8_t get_voltage(unsigned vin)
 {
 	if (vin > 3330) {
 		return 0xfc;
 	} else if (vin > 1400) {
-		int x = (vin - 1400) / 20;
-		return 0x9D + x;
+		unsigned x = (vin - 1400) / 20;
+		return (uint8_t)(0x9D + x);
 	} else if (vin > 730) {
-		int x = (vin - 730) / 5;
-		return 0x18 + x;
+		unsigned x = (vin - 730) / 5;
+		return (uint8_t)(0x18 + x);
 	} else if (vin > 500) {
-		int x = (vin - 500) / 10;
-		return x;
+		unsigned x = (vin - 500) / 10;
+		return (uint8_t)x;
 	}
 
 	return 0;
@@ -421,7 +422,6 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 	default:
 		return -EINVAL;
 	}
-	return 0;
 }
 
 static int xtrvxllv0_get_cfg(struct xtrxll_base_dev* dev, enum xtrxll_cfg param, int* out)
