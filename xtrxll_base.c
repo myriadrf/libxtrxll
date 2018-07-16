@@ -363,20 +363,35 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 		uint32_t t = 0;
 		unsigned i, j;
 		unsigned cur, prev = 0;
+		unsigned pval = 0, cval;
+		unsigned delta;
 		*outval = 0;
 
-		for (i = 0, j = 0; i < 8 && j < 2; i++) {
+		for (i = 0, j = 0; i < 20 && j < 2; i++) {
 			res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_REF_OSC, &tmp);
 			if (res)
 				return res;
 
 			cur = (tmp >> 28) & 0xf;
+			cval = tmp & 0xffffff;
+
 			if (cur == prev) {
 				usleep(5000);
 				continue;
 			}
+			if (prev != 0) {
+				delta = (pval > cval) ? pval - cval : cval - pval;
+			} else {
+				delta = (unsigned)-1;
+			}
+
 			prev = cur;
-			t += tmp & 0xffffff;
+			pval = cval;
+
+			if (delta > 4)
+				continue;
+
+			t += cval;
 			j++;
 		}
 		if (j < 2)
