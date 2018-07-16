@@ -416,6 +416,7 @@ int main(int argc, char** argv)
 	int pmic_reg = -1;
 	int discovery = 0;
 	int mmcm_tx = 1;
+	int vio = -1;
 
 	pthread_t out_thread, in_thread;
 #ifdef __linux
@@ -427,7 +428,7 @@ int main(int argc, char** argv)
 	sem_init(&g_in_buff_available, 0, 0);
 	sem_init(&g_in_buff_ready, 0, 0);
 
-	while ((opt = getopt(argc, argv, "dF:fU:C:Z:21A:a:oD:PRT:r:m:vO:I:l:p:S")) != -1) {
+	while ((opt = getopt(argc, argv, "dF:fU:C:Z:21A:a:oD:PRT:r:m:vO:I:l:p:SV:")) != -1) {
 		switch (opt) {
 		case 'd':
 			discovery = 1;
@@ -502,6 +503,9 @@ int main(int argc, char** argv)
 		case 'I':
 			in_stream  = create_in_stream(optarg);
 			break;
+		case 'V':
+			vio = atoi(optarg);
+			break;
 		default: /* '?' */
 			fprintf(stderr, "Usage: %s [-D device] [-P] [-T tempsensor] [-R] [-r fefmt] [-a dac_val] [-o]\n",
 					argv[0]);
@@ -544,6 +548,14 @@ int main(int argc, char** argv)
 		if (!res) {
 			printf("Detected LMS #%d: %08x\n", i, result);
 		}
+	}
+
+	if (vio > 100) {
+		res = xtrxll_set_param(dev, XTRXLL_PARAM_PWR_VIO, vio);
+		if (res)
+			goto falied_reset;
+
+		usleep(10000);
 	}
 
 	if (lf) {
@@ -613,12 +625,13 @@ int main(int argc, char** argv)
 			fputs(buffer, stderr);
 		}
 	}
-	if (cal_tcxo) {
-		do_calibrate_tcxo(dev, crange, 65535, 4);
-	}
 
 	if (set_dac != -1) {
 		res = xtrxll_set_osc_dac(dev, set_dac);
+	}
+
+	if (cal_tcxo) {
+		do_calibrate_tcxo(dev, crange, 65535, 4);
 	}
 
 	if (test_1pps) {

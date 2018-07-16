@@ -268,20 +268,6 @@ static inline int xtrxll_dma_tx_start(struct xtrxll_dev* dev, int chan,
 XTRXLL_API int xtrxll_set_osc_dac(struct xtrxll_dev* dev, unsigned val);
 XTRXLL_API int xtrxll_get_osc_freq(struct xtrxll_dev* dev, uint32_t *regval);
 
-/*
-typedef enum xtrxll_mmcm_regs {
-	XTRXLL_MMCM_WR_MASK    = 0x0080,
-	XTRXLL_MMCM_REG_MASK   = 0x0100,
-	XTRXLL_MMCM_CLKSEL_OSC = 0x0200,
-	XTRXLL_MMCM_RESET      = 0x0400,
-	XTRXLL_MMCM_PWRDOWN    = 0x0800,
-} xtrxll_mmcm_regs_t;
-
-XTRXLL_API int xtrxll_set_txmmcm(struct xtrxll_dev* dev, uint16_t reg, uint16_t value);
-XTRXLL_API int xtrxll_get_txmmcm(struct xtrxll_dev* dev, uint16_t* value,
-								 uint8_t* locked, uint8_t* rdy);
-*/
-
 /**
  * @brief xtrxll_fill_repeat_buf
  * @param dev
