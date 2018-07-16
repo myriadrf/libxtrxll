@@ -215,12 +215,6 @@ const char* xtrxll_get_name(struct xtrxll_dev* dev)
 	return bdev->id;
 }
 
-int xtrxll_get_cfg(struct xtrxll_dev* dev, enum xtrxll_cfg param, int* out)
-{
-	struct xtrxll_base_dev* bdev = (struct xtrxll_base_dev*)dev;
-	return bdev->ctrlops->get_cfg(bdev->self, param, out);
-}
-
 int xtrxll_lms7_spi_bulk(struct xtrxll_dev* dev, uint32_t lmsno,
 						 const uint32_t* out, uint32_t* in, size_t count)
 {
@@ -325,33 +319,6 @@ int xtrxll_dma_start(struct xtrxll_dev* dev, int chan,
 	return bdev->selfops->dma_start(bdev->self, chan, rxfe, rxmode,
 										 rx_start_sample, txfe, txmode);
 }
-
-int xtrxll_set_osc_dac(struct xtrxll_dev* dev, unsigned val)
-{
-	struct xtrxll_base_dev* bdev = (struct xtrxll_base_dev*)dev;
-	return bdev->ctrlops->set_osc_dac(bdev->self, val);
-}
-
-int xtrxll_get_osc_freq(struct xtrxll_dev* dev, uint32_t *regval)
-{
-	struct xtrxll_base_dev* bdev = (struct xtrxll_base_dev*)dev;
-	return bdev->ctrlops->get_osc_freq(bdev->self, regval);
-}
-
-/*
-int xtrxll_set_txmmcm(struct xtrxll_dev* dev, uint16_t reg, uint16_t value)
-{
-	struct xtrxll_base_dev* bdev = (struct xtrxll_base_dev*)dev;
-	return bdev->ctrlops->set_txmmcm(bdev->self, reg, value);
-}
-
-int xtrxll_get_txmmcm(struct xtrxll_dev* dev, uint16_t* value,
-					  uint8_t* locked, uint8_t* rdy)
-{
-	struct xtrxll_base_dev* bdev = (struct xtrxll_base_dev*)dev;
-	return bdev->ctrlops->get_txmmcm(bdev->self, value, locked, rdy);
-}
-*/
 
 int xtrxll_repeat_tx_buf(struct xtrxll_dev* dev, int chan, xtrxll_fe_t fmt,
 						 const void* buff, unsigned buf_szs, xtrxll_mode_t mode)

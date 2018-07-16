@@ -45,6 +45,7 @@ struct xtrxll_base_dev {
 	const char* id;
 
 	uint32_t hwid;
+	uint32_t internal_state[7]; ///< internal state (DO NOT TOUCH)
 };
 
 int xtrxll_base_dev_init(struct xtrxll_base_dev* dev,
@@ -139,11 +140,6 @@ enum {
 };
 
 struct xtrxll_ctrl_ops {
-	int (*get_cfg)(struct xtrxll_base_dev* dev, enum xtrxll_cfg param, int* out);
-
-	int (*set_osc_dac)(struct xtrxll_base_dev* dev, unsigned val);
-	int (*get_osc_freq)(struct xtrxll_base_dev* dev, uint32_t *regval);
-
 	int (*lms7_pwr_ctrl)(struct xtrxll_base_dev* dev, uint32_t lmsno,
 						 unsigned ctrl_mask);
 	int (*get_sensor)(struct xtrxll_base_dev* dev, unsigned sensorno,

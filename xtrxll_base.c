@@ -50,6 +50,14 @@ enum fwids {
 	FWID_XTRX_R4 = 4,
 };
 
+struct internal_base_state {
+	uint8_t rx_ant;
+	uint8_t tx_ant;
+
+	uint8_t pwr_msk;
+	uint8_t ext_clk;
+};
+
 #define GET_FWID(hwid) ((hwid)>>24)
 
 static int lp8758_get(struct xtrxll_base_dev* dev, uint8_t bus, uint8_t reg,
@@ -313,6 +321,16 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 	uint32_t tmp;
 
 	switch (sensorno) {
+	case XTRXLL_CFG_NUM_RFIC:
+		*outval = 1;
+		return 0;
+	case XTRXLL_CFG_HAS_GPS:
+		*outval = 1;
+		return 0;
+	case XTRXLL_CFG_HAS_SIM_READER:
+		*outval = 1;
+		return 0;
+
 	case XTRXLL_PMIC0_VER:
 		*outval = 0;
 		return lp8758_get(dev->self, 0, DEV_REV, (uint8_t*)outval);
@@ -419,18 +437,9 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 	case XTRXLL_HWID:
 		*outval = dev->hwid;
 		return 0;
+
 	default:
 		return -EINVAL;
-	}
-}
-
-static int xtrvxllv0_get_cfg(struct xtrxll_base_dev* dev, enum xtrxll_cfg param, int* out)
-{
-	switch (param) {
-	case XTRXLL_CFG_NUM_LMS7:        *out = 1; return 0;
-	case XTRXLL_CFG_HAS_GPS:         *out = 1; return 0;
-	case XTRXLL_CFG_HAS_SIM_READER:  *out = 1; return 0;
-	default:     return -EINVAL;
 	}
 }
 
@@ -618,13 +627,24 @@ static int xtrvxllv0_mem_rb32(struct xtrxll_base_dev* dev, uint32_t xtrx_addr,
 	return (int)mwords;
 }
 
+static int xtrvxllv0_set_osc_dac(struct xtrxll_base_dev* dev, unsigned val)
+{
+	if (val > 65535)
+		val = 65535;
+
+	if (GET_FWID(dev->hwid) == FWID_XTRX_R4)
+		return mcp4725_set_cur(dev, val);
+
+	return ltc2606_set_cur(dev, val);
+}
+
 static int xtrvxllv0_set_param(struct xtrxll_base_dev* dev, unsigned paramno, unsigned param)
 {
+	struct internal_base_state* intr = (struct internal_base_state*)dev->internal_state;
+
 	switch (paramno) {
 	case XTRXLL_PARAM_CLOCK_TYPE:
-	{
 		return -EINVAL;
-	}
 	case XTRXLL_PARAM_PWR_MODE:
 		return xtrxllr3_lms7pwr_set_mode(dev, param);
 	case XTRXLL_PARAM_PWR_VIO:
@@ -633,28 +653,23 @@ static int xtrvxllv0_set_param(struct xtrxll_base_dev* dev, unsigned paramno, un
 		return dev->selfops->reg_out(dev->self,
 									 UL_GP_ADDR + GP_PORT_WR_LMS_CTRL,
 									 ((param << 17) | (1 <<16)));
+	case XTRXLL_PARAM_REF_DAC:
+		return xtrvxllv0_set_osc_dac(dev, param);
+	case XTRXLL_PARAM_SWITCH_RX_ANT:
+		intr->rx_ant = (uint8_t)param;
+		return xtrvxllv0_lms7_ant(dev, intr->rx_ant, intr->tx_ant);
+	case XTRXLL_PARAM_SWITCH_TX_ANT:
+		intr->tx_ant = (uint8_t)param;
+		return xtrvxllv0_lms7_ant(dev, intr->rx_ant, intr->tx_ant);
 	default:
 		return -EINVAL;
 	}
 }
 
-static int xtrvxllv0_set_osc_dac(struct xtrxll_base_dev* dev, unsigned val)
-{
-	if (GET_FWID(dev->hwid) == FWID_XTRX_R4)
-		return mcp4725_set_cur(dev, val);
-
-	return ltc2606_set_cur(dev, val);
-}
-
 const static struct xtrxll_ctrl_ops s_xtrx_base_ops = {
-	.get_cfg = xtrvxllv0_get_cfg,
-
 	.lms7_pwr_ctrl = xtrvxllv0_lms7_pwr_ctrl,
 	.lms7_ant = xtrvxllv0_lms7_ant,
 	.get_sensor = xtrvxllv0_get_sensor,
-
-	.set_osc_dac = xtrvxllv0_set_osc_dac,
-	.get_osc_freq = xtrvxllv0_get_osc_freq,
 
 	.drp_set = xtrvxllv0_drp_set,
 	.drp_get = xtrvxllv0_drp_get,
@@ -678,6 +693,7 @@ int xtrxll_base_dev_init(struct xtrxll_base_dev* dev,
 	dev->selfops = ops;
 	dev->id = id;
 	dev->ctrlops = &s_xtrx_base_ops;
+	memset(&dev->internal_state, 0, sizeof(dev->internal_state));
 
 	int res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_HWCFG,
 											  &dev->hwid);

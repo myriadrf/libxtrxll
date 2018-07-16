@@ -164,9 +164,9 @@ static int create_in_stream(const char* filename)
 void do_calibrate_tcxo(struct xtrxll_dev *dev, int range, int whole, int step)
 {
 	int j, osc, val, res;
-	xtrxll_set_osc_dac(dev, 0);
+	xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, 0);
 	sleep(1);
-	xtrxll_set_osc_dac(dev, 0);
+	xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, 0);
 	sleep(1);
 
 	for (int i = range; i < whole-range; i+=step) {
@@ -182,7 +182,7 @@ void do_calibrate_tcxo(struct xtrxll_dev *dev, int range, int whole, int step)
 		}
 
 		//xtrxll_set_osc_dac(dev, 0x3000);
-		xtrxll_set_osc_dac(dev, i);
+		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, i);
 		usleep(100); /*
 		for (k = 0; k < 32; k++) {
 			xtrxll_set_osc_dac(dev, i + 1);
@@ -207,7 +207,9 @@ int do_tcxo_calibration(struct xtrxll_dev *dev, int* ferr, double fref)
 	res = xtrxll_get_sensor(dev, XTRXLL_ONEPPS_CAPTURED, &j);
 
 	for (i = 0; i < 2; i++) {
-		xtrxll_set_osc_dac(dev, D[i]); usleep(1000); xtrxll_set_osc_dac(dev, D[i]);
+		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, D[i]);
+		usleep(1000);
+		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, D[i]);
 
 		res = xtrxll_get_sensor(dev, XTRXLL_ONEPPS_CAPTURED, &j);
 		res = xtrxll_get_sensor(dev, XTRXLL_ONEPPS_CAPTURED, &j);
@@ -229,7 +231,9 @@ int do_tcxo_calibration(struct xtrxll_dev *dev, int* ferr, double fref)
 
 	printf("k=%.3f Q=%d\n", k / 2, (int)(Q + 0.5));
 
-	xtrxll_set_osc_dac(dev, Q + 0.5); usleep(1000);  xtrxll_set_osc_dac(dev, Q + 0.5);
+	xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, Q + 0.5);
+	usleep(1000);
+	xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, Q + 0.5);
 	res = xtrxll_get_sensor(dev, XTRXLL_ONEPPS_CAPTURED, &j);
 	res = xtrxll_get_sensor(dev, XTRXLL_ONEPPS_CAPTURED, &j);
 	if (res == 0) {
@@ -307,9 +311,9 @@ void do_test_1pps(struct xtrxll_dev *dev, int initial_dac, double fref)
 			initial_dac = DAC_RANGE / 2;
 		}
 		u0 = u1 = u2 = initial_dac - (DAC_RANGE / 2);
-		xtrxll_set_osc_dac(dev, initial_dac);
+		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, initial_dac);
 		sleep(1);
-		xtrxll_set_osc_dac(dev, initial_dac);
+		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, initial_dac);
 	}
 
 	int settled = 0;
@@ -377,7 +381,7 @@ void do_test_1pps(struct xtrxll_dev *dev, int initial_dac, double fref)
 		ctrl_prev = ctrl;
 
 		printf("  DC: %d\n", ctrl);
-		xtrxll_set_osc_dac(dev, (DAC_RANGE / 2) + ctrl);
+		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, (DAC_RANGE / 2) + ctrl);
 		skip_upd = 1;
 	}
 }
@@ -539,7 +543,7 @@ int main(int argc, char** argv)
 			goto falied_reset;
 	}
 
-	res = xtrxll_get_cfg(dev, XTRXLL_CFG_NUM_LMS7, &num_lms7);
+	res = xtrxll_get_sensor(dev, XTRXLL_CFG_NUM_RFIC, &num_lms7);
 	if (res)
 		goto falied_reset;
 
@@ -627,7 +631,7 @@ int main(int argc, char** argv)
 	}
 
 	if (set_dac != -1) {
-		res = xtrxll_set_osc_dac(dev, set_dac);
+		res = xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, set_dac);
 	}
 
 	if (cal_tcxo) {

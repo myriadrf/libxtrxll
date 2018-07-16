@@ -80,19 +80,6 @@ XTRXLL_API int xtrxll_discovery(xtrxll_device_info_t* buffer,
 
 XTRXLL_API const char* xtrxll_get_name(struct xtrxll_dev* dev);
 
-enum xtrxll_cfg {
-	XTRXLL_CFG_NUM_LMS7,
-	XTRXLL_CFG_HAS_GPS,
-	XTRXLL_CFG_HAS_SIM_READER,
-
-	/** Get internal TX buffer in SISO I/Q symbols, for MIMO this value /2 */
-	XTRXLL_CFG_INT_TX_BUF_SYMS,
-};
-
-XTRXLL_API int xtrxll_get_cfg(struct xtrxll_dev* dev, enum xtrxll_cfg param,
-							  int* out);
-
-
 enum xtrxll_lms7_mask {
 	XTRXLL_LMS7_0 = 1,
 	XTRXLL_LMS7_1 = 2,
@@ -151,6 +138,10 @@ enum xtrxll_sensors {
 	XTRXLL_TEST_CNT_RXIQ_MALGN,
 
 	XTRXLL_HWID,
+
+	XTRXLL_CFG_NUM_RFIC,
+	XTRXLL_CFG_HAS_GPS,
+	XTRXLL_CFG_HAS_SIM_READER,
 };
 
 XTRXLL_API int xtrxll_get_sensor(struct xtrxll_dev* dev, unsigned sensorno,
@@ -161,6 +152,12 @@ typedef enum xtrxll_params {
 	XTRXLL_PARAM_PWR_MODE,
 	XTRXLL_PARAM_PWR_VIO,
 	XTRXLL_PARAM_RX_DLY,
+	XTRXLL_PARAM_REF_DAC,
+	XTRXLL_PARAM_SWITCH_RX_ANT,
+	XTRXLL_PARAM_SWITCH_TX_ANT,
+	XTRXLL_PARAM_PWR_CTRL,
+	XTRXLL_PARAM_EXT_CLK,
+
 } xtrxll_params_t;
 
 XTRXLL_API int xtrxll_set_param(struct xtrxll_dev* dev, unsigned paramno,
@@ -263,10 +260,6 @@ static inline int xtrxll_dma_tx_start(struct xtrxll_dev* dev, int chan,
 							XTRXLL_FE_MODE_MIMO, 0, fe, mode);
 }
 
-
-// Other
-XTRXLL_API int xtrxll_set_osc_dac(struct xtrxll_dev* dev, unsigned val);
-XTRXLL_API int xtrxll_get_osc_freq(struct xtrxll_dev* dev, uint32_t *regval);
 
 /**
  * @brief xtrxll_fill_repeat_buf
