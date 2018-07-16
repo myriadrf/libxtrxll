@@ -36,7 +36,7 @@
 	(((RDZSZ) & 7U) << 28) | \
 	(((WRSZ) & 3U) << 26) | \
 	(((DEVNO) & 3U) << 24) | \
-	(((DATA) & 0xffffff) << 0))
+	(((DATA) & 0xffffffu) << 0))
 
 enum xtrx_i2c_lut {
 	XTRX_I2C_PMIC_FPGA = 0,
@@ -45,48 +45,20 @@ enum xtrx_i2c_lut {
 	XTRX_I2C_PMIC_LMS = 3,
 };
 
-// Move away into OPS
-static int transact_i2c_cmd(struct xtrxll_base_dev* dev, uint32_t cmd,
-							uint32_t *outres)
-{
-	int res = dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TMP102,
-									cmd);
-	if (res)
-		return res;
+enum fwids {
+	FWID_XTRX_R3 = 0,
+	FWID_XTRX_R4 = 4,
+};
 
-	if (outres) {
-		// TODO: Get rid of this sleep!
-		usleep(1000);
-
-		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_TMP102,
-								   outres);
-	}
-	return res;
-}
+#define GET_FWID(hwid) ((hwid)>>24)
 
 static int lp8758_get(struct xtrxll_base_dev* dev, uint8_t bus, uint8_t reg,
 					  uint8_t* out)
 {
 	uint32_t tmp;
-#if 0
-	int res = dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TMP102,
-									MAKE_I2C_CMD(1, 0, 1, bus, reg));
-	if (res)
-		return res;
-
-	//TODO: get rid of sleep!
-	usleep(25000);
-
-	res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_TMP102, &tmp);
-	*out = tmp & 0xff;
-
-	usleep(25000);
-	return res;
-#endif
-	res = transact_i2c_cmd(dev, MAKE_I2C_CMD(1, 0, 1, bus, reg), &tmp);
+	int res = dev->selfops->i2c_cmd(dev->self, MAKE_I2C_CMD(1, 0, 1, bus, reg), &tmp);
 	if (!res) {
 		*out = tmp & 0xff;
-		usleep(25000);
 	}
 	return res;
 }
@@ -94,10 +66,36 @@ static int lp8758_get(struct xtrxll_base_dev* dev, uint8_t bus, uint8_t reg,
 static int lp8758_set(struct xtrxll_base_dev* dev, uint8_t bus, uint8_t reg,
 					  uint8_t in)
 {
-	//return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TMP102,
-	//							 MAKE_I2C_CMD(0, 0, 2, bus, reg | ((uint32_t)in << 8)));
+	return dev->selfops->i2c_cmd(dev->self,
+								 MAKE_I2C_CMD(0, 0, 2, bus, reg | ((uint32_t)in << 8)), NULL);
+}
 
-	return transact_i2c_cmd(dev, MAKE_I2C_CMD(0, 0, 2, bus, reg | ((uint32_t)in << 8)), NULL);
+static int tmp108_get(struct xtrxll_base_dev* dev, unsigned reg, int *outval)
+{
+	uint32_t tmp = (uint32_t)-1;
+	int res = dev->selfops->i2c_cmd(dev->self, MAKE_I2C_CMD(1, 1, 1, XTRX_I2C_TMP, reg),
+								&tmp);
+	*outval = (int16_t)(htole16(tmp));
+	return res;
+}
+
+static int ltc2606_set_cur(struct xtrxll_base_dev* dev, unsigned val)
+{
+	uint32_t cmd = (0x30) | (((val >> 8) & 0xff) << 8) | ((val & 0xff) << 16);
+	return dev->selfops->i2c_cmd(dev->self,
+								 MAKE_I2C_CMD(0, 0, 3, XTRX_I2C_TMP, cmd), NULL);
+}
+
+static int mcp4725_set_cur(struct xtrxll_base_dev* dev, unsigned val)
+{
+	uint32_t cmd = (((val >> 12) & 0x0f)) | (((val >> 4) & 0xff) << 8);
+	return dev->selfops->i2c_cmd(dev->self,
+								 MAKE_I2C_CMD(0, 0, 2, XTRX_I2C_DAC, cmd), NULL);
+}
+
+static int mcp4725_get_cur(struct xtrxll_base_dev* dev, uint32_t* oval)
+{
+	return dev->selfops->i2c_cmd(dev->self, MAKE_I2C_CMD(1, 3, 0, XTRX_I2C_DAC, 0), oval);
 }
 
 
@@ -260,51 +258,7 @@ static void lp8758_en(struct xtrxll_base_dev* dev, int en, int en3v3)
 	}
 }
 
-static int tmp108_get(struct xtrxll_base_dev* dev, unsigned reg, int *outval)
-{
-	int res;
-	uint32_t tmp;
 
-	res = dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TMP102,
-								MAKE_I2C_CMD(1, 1, 1, XTRX_I2C_TMP, reg));
-	usleep(10000);
-	res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_TMP102, &tmp);
-	if (res)
-		return res;
-
-	*outval = (int16_t)(htole16(tmp));
-	return res;
-}
-
-static int xtrvxllv0_set_osc_dac(struct xtrxll_base_dev* dev, unsigned val)
-{
-#if 0
-	return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_DAC_SPI, val);
-#endif
-#if 0
-	uint32_t cmd = (0x30) | (((val >> 8) & 0xff) << 8) | ((val & 0xff) << 16);
-	return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TMP102,
-								 MAKE_I2C_CMD(0, 0, 3, XTRX_I2C_TMP, cmd));
-#endif
-	uint32_t cmd = (((val >> 12) & 0x0f)) | (((val >> 4) & 0xff) << 8);
-	return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TMP102,
-								 MAKE_I2C_CMD(0, 0, 2, XTRX_I2C_DAC, cmd));
-}
-
-static int get_dac_val(struct xtrxll_base_dev* dev, uint32_t* oval)
-{
-	int res = dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TMP102,
-									MAKE_I2C_CMD(1, 3, 0, XTRX_I2C_DAC, 0));
-	if (res)
-		return res;
-
-	usleep(10000);
-	res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_TMP102, oval);
-	if (res)
-		return res;
-
-	return 0;
-}
 
 static int xtrvxllv0_get_osc_freq(struct xtrxll_base_dev* dev, uint32_t *regval)
 {
@@ -447,10 +401,8 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 		*outval = tmp;
 		return res;
 	case XTRXLL_HWID:
-		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_HWCFG,
-								   &tmp);
-		*outval = tmp;
-		return res;
+		*outval = dev->hwid;
+		return 0;
 	default:
 		return -EINVAL;
 	}
@@ -671,6 +623,14 @@ static int xtrvxllv0_set_param(struct xtrxll_base_dev* dev, unsigned paramno, un
 	}
 }
 
+static int xtrvxllv0_set_osc_dac(struct xtrxll_base_dev* dev, unsigned val)
+{
+	if (GET_FWID(dev->hwid) == FWID_XTRX_R4)
+		return mcp4725_set_cur(dev, val);
+
+	return ltc2606_set_cur(dev, val);
+}
+
 const static struct xtrxll_ctrl_ops s_xtrx_base_ops = {
 	.get_cfg = xtrvxllv0_get_cfg,
 
@@ -695,13 +655,29 @@ const static struct xtrxll_ctrl_ops s_xtrx_base_ops = {
 };
 
 
-
-int xtrxll_base_fill_ctrlops(struct xtrxll_base_dev* dev, unsigned devid)
+int xtrxll_base_dev_init(struct xtrxll_base_dev* dev,
+						  const struct xtrxll_ops* ops,
+						  const char* id)
 {
-	if (devid != 0) {
-		return -ENOTSUP;
+	dev->self = dev;
+	dev->selfops = ops;
+	dev->id = id;
+	dev->ctrlops = &s_xtrx_base_ops;
+
+	int res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_HWCFG,
+											  &dev->hwid);
+	if (res)
+		return res;
+
+	switch (GET_FWID(dev->hwid)) {
+	case FWID_XTRX_R3:
+		XTRXLL_LOG(XTRXLL_INFO, "XTRX %s: XTRX Rev3 (%08x)\n", dev->id, dev->hwid);
+		return 0;
+	case FWID_XTRX_R4:
+		XTRXLL_LOG(XTRXLL_INFO, "XTRX %s: XTRX Rev4 (%08x)\n", dev->id, dev->hwid);
+		return 0;
 	}
 
-	dev->ctrlops = &s_xtrx_base_ops;
-	return 0;
+	XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Unrecognized HWID %08x!\n", dev->id, dev->hwid);
+	return -ENOTSUP;
 }

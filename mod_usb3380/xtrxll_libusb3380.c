@@ -49,7 +49,7 @@ enum {
 
 enum {
 	// Not optimal, but use for now
-	TXDMA_BUFFERS_AVAIL = (TXDMA_BUFFERS - 2) - 8,
+    TXDMA_BUFFERS_AVAIL = (TXDMA_BUFFERS - 2) - 8,
 	// Max performance (doesn't work well in low samplerate)
 	//TXDMA_BUFFERS_AVAIL = TXDMA_BUFFERS,
 };
@@ -279,6 +279,25 @@ static int xtrxllusb3380v0_lms7_spi_bulk(struct xtrxll_base_dev* bdev,
 	return 0;
 }
 
+static int xtrxllusb3380v0_i2c_cmd(struct xtrxll_base_dev* bdev,
+								   uint32_t cmd, uint32_t *out)
+{
+	struct xtrxll_usb3380_dev* dev = (struct xtrxll_usb3380_dev*)bdev;
+
+	int res = pcieusb3380v0_reg_out(dev, UL_GP_ADDR + GP_PORT_WR_TMP102, cmd);
+	if (res)
+		return res;
+
+	if (out) {
+		// TODO: Get rid of this sleep!
+		usleep(1000);
+
+		res = pcieusb3380v0_reg_in(dev, UL_GP_ADDR + GP_PORT_RD_TMP102, out);
+	}
+	return res;
+}
+
+
 static void xtrxllusb3380v0_log(libusb3380_loglevel_t level,
 								void* obj, const char* message, ...)
 {
@@ -421,11 +440,9 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 				   device, strerror_safe(res));
 		goto failed_malloc;
 	}
-	dev->base.self = &dev->base;
-	dev->base.selfops = xtrxllusb3380v0_init(XTRXLL_ABI_VERSION);
-	dev->base.id = dev->pcie_devname;
 	dev->ctx = ctx;
 	dev->devid = 0x1;
+	snprintf(dev->pcie_devname, DEV_NAME_SIZE - 1, "USB3_%d", dev->devid);
 	dev->bar0 = usb3380_pci_dev_bar_addr(pcidev, 0);
 	dev->bar1 = usb3380_pci_dev_bar_addr(pcidev, 1);
 	dev->rx_dma_flow_ctrl = true;
@@ -446,14 +463,6 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 	if (res) {
 		XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Failed to init DMA subsystem\n",
 				   dev->base.id);
-		goto failed_abi_ctrl;
-	}
-	snprintf(dev->pcie_devname, DEV_NAME_SIZE - 1, "USB3_%d", dev->devid);
-
-	res = xtrxll_base_fill_ctrlops(&dev->base, proto_ver);
-	if (res) {
-		XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Unsupported protocol version: %d",
-				   dev->base.id, proto_ver);
 		goto failed_abi_ctrl;
 	}
 	*pdev = &dev->base;
@@ -517,6 +526,10 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 	dev->tx_fly_buffers = 0;
 	dev->tx_stop = false;
 
+	res = xtrxll_base_dev_init(&dev->base, xtrxllusb3380v0_init(XTRXLL_ABI_VERSION), dev->pcie_devname);
+	if (res) {
+		goto failed_unsup_hw;
+	}
 	// 0 -  128
 	// 1 -  256
 	// 2 -  512
@@ -526,6 +539,7 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 	/* 256 bytes is supported by usb3380 */
 	res = pcieusb3380v0_reg_out(dev, UL_GP_ADDR + GP_PORT_WR_INT_PCIE,
 								(1U << INT_PCIE_E_FLAG) |
+                                (1U << INT_PCIE_E_OVRD) |
 								(1U << 16) | /* 256 B max_size */
 								(4U << 17) | /* 2048 B max_req_size */
 								((dev->rx_dma_flow_ctrl ? 0 : 1U) << 24) | /* disable ovf ctrl on RX path */
@@ -547,6 +561,7 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 			   dev->base.id, device);
 	return 0;
 
+failed_unsup_hw:
 failed_pcie_cfg:
 	sem_destroy(&dev->tx_buf_available);
 failed_sem_tx_buf_available:
@@ -959,7 +974,8 @@ static int xtrxllusb3380v0_dma_tx_init(struct xtrxll_base_dev* bdev, int chan,
 	int res;
 	unsigned i;
 	for (i = 0; i < TXDMA_BUFFERS; i++) {
-		int num = (i % 2) ? TXDMA_BUFFERS / 2 + i / 2 : i / 2;
+        int num = (dev->tx_ep_count == 1) ? i :
+                (i % 2) ? TXDMA_BUFFERS / 2 + i / 2 : i / 2;
 
 		uint32_t reg = (((buf_szs / 16) - 1) & 0xFFF) |
 				(0xFFFFF000 & (DMA_REGION_TX_ADDR + /*i*/ num * TXDMA_MMAP_BUFF));
@@ -1333,6 +1349,7 @@ const static struct xtrxll_ops mod_ops = {
 	.reg_in_n = xtrxllusb3380v0_reg_in_n,
 
 	.spi_bulk = xtrxllusb3380v0_lms7_spi_bulk,
+	.i2c_cmd = xtrxllusb3380v0_i2c_cmd,
 
 	// RX DMA
 	.dma_rx_init = xtrxllusb3380v0_dma_rx_init,

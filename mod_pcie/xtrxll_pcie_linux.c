@@ -198,11 +198,30 @@ static int xtrxllpciev0_lms7_spi_bulk(struct xtrxll_base_dev* bdev,
 	return 0;
 }
 
+static int xtrxllpciev0_i2c_cmd(struct xtrxll_base_dev* bdev,
+								   uint32_t cmd, uint32_t *out)
+{
+	struct xtrxll_pcie_dev* dev = (struct xtrxll_pcie_dev*)bdev;
+
+	internal_xtrxll_reg_out(dev, UL_GP_ADDR + GP_PORT_WR_TMP102, cmd);
+
+	if (out) {
+		// TODO: Get rid of this sleep!
+		usleep(1000);
+
+		*out = internal_xtrxll_reg_in(dev, UL_GP_ADDR + GP_PORT_RD_TMP102);
+	}
+	return 0;
+}
+
 static int xtrxllpciev0_open(const char* device, unsigned flags,
 							 struct xtrxll_base_dev** pdev)
 {
 	xtrxll_log_initialize(NULL);
 
+	void* mem;
+	void* mem_stat;
+	struct xtrxll_pcie_dev* dev;
 	int err;
 	int fd = open(device, O_RDWR);
 	if (fd < 0) {
@@ -212,7 +231,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 		goto failed_open;
 	}
 
-	void* mem = mmap(0, XTRXLL_MMAP_CONFREGS_LEN, PROT_READ | PROT_WRITE,
+	mem = mmap(0, XTRXLL_MMAP_CONFREGS_LEN, PROT_READ | PROT_WRITE,
 					 MAP_SHARED, fd, XTRXLL_MMAP_CONFREGS_OFF);
 	if (mem == MAP_FAILED) {
 		err = errno;
@@ -221,7 +240,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 		goto failed_mmap;
 	}
 
-	void* mem_stat = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 4096*1024);
+	mem_stat = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 4096*1024);
 	if (mem_stat == MAP_FAILED) {
 		err = errno;
 		XTRXLL_LOG(XTRXLL_ERROR, "Can't mmap stat area for device `%s`: %s\n",
@@ -229,7 +248,6 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 		goto failed_mmap2;
 	}
 
-	struct xtrxll_pcie_dev* dev;
 	dev = (struct xtrxll_pcie_dev*)malloc(sizeof(struct xtrxll_pcie_dev));
 	if (dev == NULL) {
 		err = errno;
@@ -238,30 +256,25 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 		goto failed_malloc;
 	}
 
-	dev->base.self = &dev->base;
-	dev->base.selfops = xtrxllpciev0_init(XTRXLL_ABI_VERSION);
-	dev->base.id = dev->pcie_devname;
 	dev->fd = fd;
+	snprintf(dev->pcie_devname, DEV_NAME_SIZE - 1, "PCI_%d", fd);
 	dev->mmap_xtrxll_regs = (volatile uint32_t* )mem;
 	dev->mmap_rx_kernel_buf = NULL;
 	dev->mmap_tx_kernel_buf = NULL;
 	dev->mmap_tx_device_buf = NULL;
 	dev->mmap_stat_buf = mem_stat;
+	err = xtrxll_base_dev_init(&dev->base, xtrxllpciev0_init(XTRXLL_ABI_VERSION), dev->pcie_devname);
+	if (err) {
+		goto failed_hw;
+	}
+
 	err = xtrxllpciebase_init(&dev->pcie);
 	if (err) {
 		XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Failed to init DMA subsystem\n",
 				   dev->base.id);
 		goto failed_abi_ctrl;
 	}
-	snprintf(dev->pcie_devname, DEV_NAME_SIZE - 1, "PCI_%d", fd);
 
-	const int proto_ver = 0;
-	err = xtrxll_base_fill_ctrlops(&dev->base, proto_ver);
-	if (err) {
-		XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Unsupported protocol version: %d",
-				   dev->base.id, proto_ver);
-		goto failed_abi_ctrl;
-	}
 	*pdev = &dev->base;
 
 	internal_xtrxll_reg_out(dev, UL_GP_ADDR + GP_PORT_WR_INT_PCIE,
@@ -279,6 +292,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 	return 0;
 
 failed_abi_ctrl:
+failed_hw:
 failed_malloc:
 	munmap(mem_stat, XTRXLL_MMAP_CONFREGS_LEN);
 failed_mmap2:
@@ -702,6 +716,7 @@ const static struct xtrxll_ops mod_ops = {
 	.reg_in_n = xtrxllpciev0_reg_in_n,
 
 	.spi_bulk = xtrxllpciev0_lms7_spi_bulk,
+	.i2c_cmd = xtrxllpciev0_i2c_cmd,
 
 	// RX DMA
 	.dma_rx_init = xtrxllpciev0_dma_rx_init,
