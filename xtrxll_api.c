@@ -230,12 +230,6 @@ int xtrxll_lms7_pwr_ctrl(struct xtrxll_dev* dev, uint32_t lmsno,
 	return bdev->ctrlops->lms7_pwr_ctrl(bdev->self, lmsno, ctrl_mask);
 }
 
-int xtrxll_lms7_ant(struct xtrxll_dev* dev, unsigned rx_ant, unsigned tx_ant)
-{
-	struct xtrxll_base_dev* bdev = (struct xtrxll_base_dev*)dev;
-	return bdev->ctrlops->lms7_ant(bdev->self, rx_ant, tx_ant);
-}
-
 int xtrxll_get_sensor(struct xtrxll_dev* dev, unsigned sensorno, int* outval)
 {
 	struct xtrxll_base_dev* bdev = (struct xtrxll_base_dev*)dev;

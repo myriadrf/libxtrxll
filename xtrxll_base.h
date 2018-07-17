@@ -145,9 +145,6 @@ struct xtrxll_ctrl_ops {
 	int (*get_sensor)(struct xtrxll_base_dev* dev, unsigned sensorno,
 					  int* outval);
 
-	int (*lms7_ant)(struct xtrxll_base_dev* dev, unsigned rx_ant,
-					unsigned tx_ant);
-
 	int (*drp_set)(struct xtrxll_base_dev* dev, unsigned drpno,
 				   uint16_t reg, uint16_t value,
 				   unsigned drp_gpio, unsigned acc_type);

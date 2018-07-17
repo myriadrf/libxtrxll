@@ -643,8 +643,12 @@ int main(int argc, char** argv)
 	}
 
 	if (rx_ant != -1) {
-		res = xtrxll_lms7_ant(dev, rx_ant, tx_ant);
+		res = xtrxll_set_param(dev, XTRXLL_PARAM_SWITCH_RX_ANT, rx_ant);
 	}
+	if (tx_ant != -1) {
+		res = xtrxll_set_param(dev, XTRXLL_PARAM_SWITCH_TX_ANT, tx_ant);
+	}
+
 	/*
 	if (do_osc != -1) {
 		uint32_t v;

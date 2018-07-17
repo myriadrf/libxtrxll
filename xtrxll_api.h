@@ -111,9 +111,6 @@ enum xtrxll_lms7_pwr {
 XTRXLL_API int xtrxll_lms7_pwr_ctrl(struct xtrxll_dev* dev, uint32_t lmsno,
 									unsigned ctrl_mask);
 
-XTRXLL_API int xtrxll_lms7_ant(struct xtrxll_dev* dev, unsigned rx_ant,
-							   unsigned tx_ant);
-
 enum xtrxll_sensors {
 	XTRXLL_TEMP_SENSOR_CUR,
 	XTRXLL_TEMP_SENSOR_MAX,

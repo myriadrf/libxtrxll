@@ -267,13 +267,6 @@ static void lp8758_en(struct xtrxll_base_dev* dev, int en, int en3v3)
 	}
 }
 
-
-
-static int xtrvxllv0_get_osc_freq(struct xtrxll_base_dev* dev, uint32_t *regval)
-{
-	return dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_ONEPPS, regval);
-}
-
 static int xtrvxllv0_lms7_pwr_ctrl(struct xtrxll_base_dev* dev, uint32_t lmsno,
 								   unsigned ctrl_mask)
 {
@@ -668,7 +661,7 @@ static int xtrvxllv0_set_param(struct xtrxll_base_dev* dev, unsigned paramno, un
 
 const static struct xtrxll_ctrl_ops s_xtrx_base_ops = {
 	.lms7_pwr_ctrl = xtrvxllv0_lms7_pwr_ctrl,
-	.lms7_ant = xtrvxllv0_lms7_ant,
+
 	.get_sensor = xtrvxllv0_get_sensor,
 
 	.drp_set = xtrvxllv0_drp_set,
