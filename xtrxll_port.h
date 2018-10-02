@@ -188,6 +188,7 @@ static inline int posix_memalign(void **memptr, size_t alignment, size_t size) {
 
 // TODO replace this constant
 #define ENAVAIL 1000
+#define ENOSTR  1001
 
 #else
 #error Unknown platform
