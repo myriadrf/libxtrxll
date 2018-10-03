@@ -208,6 +208,20 @@ int sem_wait(sem_t *sem)
 	return (WaitForSingleObject(*sem, INFINITE) == WAIT_OBJECT_0) ? 0 : -1;
 }
 
+int sem_trywait(sem_t *sem)
+{
+	switch (WaitForSingleObject(*sem, 0)) {
+	case WAIT_OBJECT_0:
+		return 0;
+	case WAIT_TIMEOUT:
+		errno = EAGAIN;
+		return -1;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+}
+
 int sem_post(sem_t *sem)
 {
 	return ReleaseSemaphore(*sem, 1, NULL) ? 0 : -1;
@@ -223,7 +237,21 @@ int sem_timedwait(sem_t *sem, const struct timespec *abs_timeout)
 	if (wait_ms < 0)
 		return 0;
 
-	return (WaitForSingleObject(*sem, (DWORD)wait_ms) == WAIT_OBJECT_0) ? 0 : -1;
+	switch (WaitForSingleObject(*sem, (DWORD)wait_ms)) {
+	case WAIT_OBJECT_0:
+		return 0;
+	case WAIT_TIMEOUT:
+		errno = ETIMEDOUT;
+		return -1;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+}
+
+int sem_getvalue(sem_t *sem, int *sval)
+{
+	return -1;
 }
 #endif
 

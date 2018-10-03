@@ -130,6 +130,9 @@ unsigned sleep(unsigned seconds);
 
 int sem_timedwait(sem_t *sem, const struct timespec *abs_timeout);
 
+int sem_trywait(sem_t *sem);
+
+int sem_getvalue(sem_t *sem, int *sval);
 /** @ingroup dynamic
  * Emulation of dl functions
  */

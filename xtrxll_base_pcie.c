@@ -51,7 +51,7 @@ int xtrxllpciebase_init(struct xtrxll_base_pcie_dma* dev)
 
 int xtrxllpciebase_dmarx_stat(struct xtrxll_base_pcie_dma* dev)
 {
-#if 1
+#if 0
 	int res;
 	uint32_t miss, odd, period;
 	res = dev->base.selfops->reg_in(dev->base.self,
