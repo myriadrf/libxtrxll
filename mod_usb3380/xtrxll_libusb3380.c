@@ -78,7 +78,7 @@ struct xtrxll_usb3380_dev
 		struct xtrxll_base_pcie_dma pcie;
 	};
 	unsigned tx_chans;
-	uint16_t devid;
+	uint32_t devid;
 	bool rx_stop;
 	bool rx_running;
 
@@ -382,11 +382,84 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 	struct xtrxll_usb3380_dev* dev;
 
 	int res;
+	unsigned devid;
+	char devid_s[16];
 
 	usb3380_set_logfunc(xtrxllusb3380v0_log, NULL);
 	usb3380_set_loglevel(xtrxll_get_loglevel());
 
-	res = usb3380_context_init(&ctx);
+	if (device == NULL || strcmp(device, "usb3380") == 0) {
+		devid = 1;
+		devid_s[0] = '1';
+		devid_s[1] = 0;
+		res = usb3380_context_init(&ctx);
+	} else {
+		if (strncmp(device, "usb3380://", 10)) {
+			return -EINVAL;
+		}
+
+		int usb_bus;
+		int usb_port;
+		int usb_addr;
+
+		int cnt = sscanf(device, "usb3380://%d/%d/%d", &usb_bus, &usb_port, &usb_addr);
+		if (cnt < 3) {
+			cnt = sscanf(device, "usb3380://%d/%d", &usb_bus, &usb_port);
+			if (cnt < 2) {
+				XTRXLL_LOG(XTRXLL_ERROR, "Can't parse device string!\n");
+				return -EINVAL;
+			}
+			usb_addr = -1;
+		}
+
+		libusb_context *uctx;
+		if (libusb_init(&uctx)) {
+			return -EFAULT;
+		}
+
+		struct libusb_device_descriptor desc;
+		libusb_device **dev;
+		libusb_device *match = NULL;
+		ssize_t devices = libusb_get_device_list(uctx, &dev);
+		if (devices < 0) {
+			libusb_exit(uctx);
+			return -ENODEV;
+		}
+
+		for (int i = 0; i < devices; i++) {
+			res = libusb_get_device_descriptor(dev[i], &desc);
+			if (res)
+				continue;
+
+			if (desc.idProduct != LIBUSB3380_PID || desc.idVendor != LIBUSB3380_VID)
+				continue;
+
+			uint8_t bus = libusb_get_bus_number(dev[i]);
+			uint8_t port = libusb_get_port_number(dev[i]);
+			uint8_t addr = libusb_get_device_address(dev[i]);
+
+			devid = (unsigned)bus * 1000000 + (unsigned)port * 1000 + addr;
+			snprintf(devid_s, sizeof(devid_s), "%d/%d/%d", bus, port, addr);
+
+
+			XTRXLL_LOG(XTRXLL_DEBUG, "usb3380: comparing devices %d/%d/%d <> %d/%d/%d\n",
+					   usb_bus, usb_port, usb_addr,
+					   bus, port, addr);
+
+			if ((usb_addr == -1 && usb_bus == bus && usb_port == port) ||
+					(usb_bus == bus && usb_port == port && usb_addr == addr)) {
+				match = dev[i];
+				break;
+			}
+		}
+
+		if (match) {
+			res = usb3380_context_init_ex(&ctx, match, uctx);
+		} else {
+			res = -ENODEV;
+		}
+		libusb_free_device_list(dev, 1);
+	}
 	if (res) {
 		XTRXLL_LOG(XTRXLL_ERROR, "Unable to allocate USB3380 context: error: %d\n", res);
 		return res;
@@ -489,8 +562,8 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 		goto failed_malloc;
 	}
 	dev->ctx = ctx;
-	dev->devid = 0x1;
-	snprintf(dev->pcie_devname, DEV_NAME_SIZE - 1, "USB3_%d", dev->devid);
+	dev->devid = devid;
+	snprintf(dev->pcie_devname, DEV_NAME_SIZE - 1, "USB3_%s", devid_s);
 	dev->bar0 = usb3380_pci_dev_bar_addr(pcidev, 0);
 	dev->bar1 = usb3380_pci_dev_bar_addr(pcidev, 1);
 	dev->rx_dma_flow_ctrl = true;
@@ -640,7 +713,7 @@ static void xtrxllusb3380v0_close(struct xtrxll_base_dev* bdev)
 {
 	struct xtrxll_usb3380_dev* dev = (struct xtrxll_usb3380_dev*)bdev;
 
-	XTRXLL_LOG(XTRXLL_INFO, "XTRX %d: Device closing\n", dev->devid);
+	XTRXLL_LOG(XTRXLL_INFO, "XTRX %s: Device closing\n", dev->base.id);
 
 	usb3380_msi_in_cancel(dev->mgr);
 
@@ -711,12 +784,12 @@ static int xtrxllusb3380v0_discovery(xtrxll_device_info_t *buffer, size_t maxbuf
 		buffer[found].product_id = PRODUCT_XTRX;
 		buffer[found].revision = 3; //TODO
 
-		XTRXLL_LOG(XTRXLL_INFO, "usb3380: Found `%s` speed %s\n",
+		XTRXLL_LOG(XTRXLL_DEBUG, "usb3380: Found `%s` speed %s\n",
 				   buffer[found].uniqname, speed_val);
 
 		found++;
 	}
-
+	libusb_free_device_list(dev, 1);
 	res = found;
 
 failed_get_list:
@@ -798,8 +871,8 @@ static void xtrxllusb3380v0_dma_rx_gpep_cb(const struct libusb3380_qgpep* gpep,
 			return;
 		}
 
-		XTRXLL_LOG(XTRXLL_WARNING, "GPEP idx %d status: %d (witten %d)\n", ep_idx,
-				   gpep->base.status, gpep->base.written);
+		XTRXLL_LOG(XTRXLL_WARNING, "%s: GPEP idx %d status: %d (witten %d)\n",
+				   dev->base.id, ep_idx, gpep->base.status, gpep->base.written);
 
 		dev->rx_gpep_buffer_off[ep_idx] += gpep->base.written;
 
@@ -809,7 +882,7 @@ static void xtrxllusb3380v0_dma_rx_gpep_cb(const struct libusb3380_qgpep* gpep,
 	}
 
 	if (packet_discarded) {
-		XTRXLL_LOG(XTRXLL_DEBUG, "DISGARDED PACKET\n");
+		XTRXLL_LOG(XTRXLL_DEBUG, "%s: DISGARDED PACKET\n", dev->base.id);
 	}
 
 	// issue next URB
@@ -837,7 +910,7 @@ static void xtrxllusb3380v0_dma_rx_gpep_cb(const struct libusb3380_qgpep* gpep,
 			res = xtrxllusb3380v0_dma_rx_gpep_issue(dev, 1U << ep_idx);
 			assert(res == 0);
 
-			XTRXLL_LOG(XTRXLL_DEBUG, "ISSUE READ %d buffer (%d avail) [%d%d]\n",
+			XTRXLL_LOG(XTRXLL_DEBUG, "%s: ISSUE READ %d buffer (%d avail) [%d%d]\n", dev->base.id,
 					   (dev->pcie.rd_buf_idx + ep_idx) & (dev->rx_buf_max - 1), available,
 					   dev->rx_gpep_active[0], dev->rx_gpep_active[1]);
 		} else {
@@ -846,7 +919,7 @@ static void xtrxllusb3380v0_dma_rx_gpep_cb(const struct libusb3380_qgpep* gpep,
 			res = xtrxllusb3380v0_dma_rx_gpep_issue(dev, 1U << ep_idx);
 			assert(res == 0);
 
-			XTRXLL_LOG(XTRXLL_WARNING, "ISSUE DISCARD %d buffer (0 avail)\n",
+			XTRXLL_LOG(XTRXLL_WARNING, "%s: ISSUE DISCARD %d buffer (0 avail)\n", dev->base.id,
 					   (dev->pcie.rd_buf_idx + ep_idx) & (dev->rx_buf_max - 1));
 		}
 	} else {
@@ -950,10 +1023,10 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 			res = xtrxllpciebase_dmarx_get(&dev->pcie, chan, &bn, &cwts, sz,
 										   (dev->rx_dma_flow_ctrl) ? PCIEDMARX_NO_CNTR_UPD : PCIEDMARX_NO_CNTR_CHECK, 0);
 			if (res == 0) {
-				XTRXLL_LOG(XTRXLL_WARNING, "XTRX RX DATA BUT NOT BUF\n");
+				XTRXLL_LOG(XTRXLL_WARNING, "XTRX %s: RX DATA BUT NOT BUF\n", dev->base.id);
 				continue;
 			} else if (res == -EOVERFLOW) {
-				XTRXLL_LOG(XTRXLL_WARNING, "XTRX RX OVERFLOW\n");
+				XTRXLL_LOG(XTRXLL_WARNING, "XTRX %s: RX OVERFLOW\n", dev->base.id);
 				cwts += dev->pcie.cfg_rx_bufsize;
 				dev->pcie.rd_cur_sample = cwts;
 				if (*wts) {
@@ -968,7 +1041,7 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 
 				xtrxllpciebase_dmarx_resume(&dev->pcie, chan, cwts);
 			} else if (res == -EAGAIN) {
-				XTRXLL_LOG(XTRXLL_DEBUG, "XTRX RX AGAIN\n");
+				XTRXLL_LOG(XTRXLL_DEBUG, "XTRX %s: RX AGAIN\n", dev->base.id);
 				//xtrxllpciebase_dmarx_stat(&dev->pcie);
 				continue;
 			} else {
@@ -1042,8 +1115,8 @@ static int xtrxllusb3380v0_dma_tx_init(struct xtrxll_base_dev* bdev, int chan,
 		uint32_t reg = (((buf_szs / 16) - 1) & 0xFFF) |
 				(0xFFFFF000 & (DMA_REGION_TX_ADDR + /*i*/ num * TXDMA_MMAP_BUFF));
 
-		XTRXLL_LOG(XTRXLL_INFO,  "XTRX: TX buf %d  DMA ADDR 0x%08x\n",
-				   i, reg);
+		XTRXLL_LOG(XTRXLL_INFO,  "XTRX %s: TX buf %d  DMA ADDR 0x%08x\n",
+				   dev->base.id, i, reg);
 		res = pcieusb3380v0_reg_out(dev, UL_TXDMA_ADDR + i, reg);
 		if (res)
 			return res;
@@ -1068,7 +1141,8 @@ static void xtrxllusb3380v0_dma_tx_gpepx_cb(const struct libusb3380_qgpep* gpep,
 	int res;
 	uint32_t fly = __atomic_and_fetch(&dev->tx_fly_buffers, ~(1U << idx), __ATOMIC_SEQ_CST);
 
-	XTRXLL_LOG(XTRXLL_DEBUG, "WRITE DONE %d idx %d (%08x)\n", gpepno, idx, fly);
+	XTRXLL_LOG(XTRXLL_DEBUG, "%s: WRITE DONE %d idx %d (%08x)\n",
+			   dev->base.id, gpepno, idx, fly);
 
 	res = sem_post(&dev->tx_buf_available);
 	assert(res == 0); 
@@ -1078,8 +1152,8 @@ static void xtrxllusb3380v0_dma_tx_gpepx_cb(const struct libusb3380_qgpep* gpep,
 			return;
 		}
 
-		XTRXLL_LOG(XTRXLL_ERROR, "GPEP_OUT %d idx %d status: %d\n",
-				   gpepno, idx, gpep->base.status);
+		XTRXLL_LOG(XTRXLL_ERROR, "%s: GPEP_OUT %d idx %d status: %d\n",
+				   dev->base.id, gpepno, idx, gpep->base.status);
 
 		// TODO handle TX timeout properly
 		// abort();
@@ -1092,7 +1166,7 @@ static int xtrxllusb3380v0_dma_tx_gpep_issue(struct xtrxll_usb3380_dev* dev, uns
 	unsigned length = dev->tx_post_size[idx & 0x1f];
 	int res;
 
-	XTRXLL_LOG(XTRXLL_DEBUG, "TX send idx %d\n", idx);
+	XTRXLL_LOG(XTRXLL_DEBUG, "%s: TX send idx %d\n", dev->base.id, idx);
 
 	libusb3380_gpep_t gp = (dev->tx_ep_count == 1) ? LIBUSB3380_GPEP2 :
 						(((idx % 2) == 0) ? LIBUSB3380_GPEP0 : LIBUSB3380_GPEP2);
@@ -1219,7 +1293,7 @@ static int xtrxllusb3380v0_dma_tx_post(struct xtrxll_base_dev* bdev, int chan,
 	res = xtrxllusb3380v0_dma_tx_gpep_issue(dev, bufno);
 	if (res) {
 		unsigned fly = __atomic_and_fetch(&dev->tx_fly_buffers, ~(1U << bufno), __ATOMIC_SEQ_CST);
-		XTRXLL_LOG(XTRXLL_ERROR, "POST ERR: %d (%08x)\n", res, fly);
+		XTRXLL_LOG(XTRXLL_ERROR, "%s: POST ERR: %d (%08x)\n", dev->base.id, res, fly);
 		return res;
 	}
 

@@ -33,6 +33,8 @@
 #include <unistd.h>
 #include <time.h>
 #include <inttypes.h>
+#include <dirent.h>
+#include <ctype.h>
 
 #include "xtrxll_log.h"
 #include "xtrxll_api.h"
@@ -223,11 +225,18 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 	void* mem_stat;
 	struct xtrxll_pcie_dev* dev;
 	int err;
-	int fd = open(device, O_RDWR);
+	const char* ldev = device;
+
+	if (strncasecmp(device, "usb3380://", 10) == 0)
+		return -ENODEV;
+	if (strncasecmp(device, "pcie://", 7) == 0)
+		ldev = &device[7];
+
+	int fd = open(ldev, O_RDWR);
 	if (fd < 0) {
 		err = errno;
 		XTRXLL_LOG(XTRXLL_ERROR, "Can't open device `%s`: %s\n",
-				   device, strerror_safe(err));
+				   ldev, strerror_safe(err));
 		goto failed_open;
 	}
 
@@ -236,7 +245,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 	if (mem == MAP_FAILED) {
 		err = errno;
 		XTRXLL_LOG(XTRXLL_ERROR, "Can't mmap config area for device `%s`: %s\n",
-				   device, strerror_safe(err));
+				   ldev, strerror_safe(err));
 		goto failed_mmap;
 	}
 
@@ -244,7 +253,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 	if (mem_stat == MAP_FAILED) {
 		err = errno;
 		XTRXLL_LOG(XTRXLL_ERROR, "Can't mmap stat area for device `%s`: %s\n",
-				   device, strerror_safe(err));
+				   ldev, strerror_safe(err));
 		goto failed_mmap2;
 	}
 
@@ -252,7 +261,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 	if (dev == NULL) {
 		err = errno;
 		XTRXLL_LOG(XTRXLL_ERROR, "Can't allocate memory for device `%s`: %s\n",
-				   device, strerror_safe(err));
+				   ldev, strerror_safe(err));
 		goto failed_malloc;
 	}
 
@@ -272,6 +281,11 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 	if (err) {
 		XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Failed to init DMA subsystem\n",
 				   dev->base.id);
+		goto failed_abi_ctrl;
+	}
+	err = xtrxllpciebase_dma_start(&dev->pcie, 0, XTRXLL_FE_STOP, XTRXLL_FE_MODE_MIMO,
+									0, XTRXLL_FE_STOP, XTRXLL_FE_MODE_MIMO);
+	if (err) {
 		goto failed_abi_ctrl;
 	}
 
@@ -314,13 +328,38 @@ static void xtrxllpciev0_close(struct xtrxll_base_dev* bdev)
 static int xtrxllpciev0_discovery(xtrxll_device_info_t *buffer, size_t maxbuf)
 {
 	if (maxbuf > 0) {
-		strncpy(buffer->uniqname, "/dev/xtrx0", sizeof(buffer->uniqname));
-		strncpy(buffer->proto, "PCIe", sizeof(buffer->proto));
-		strncpy(buffer->addr, "pci://0/0/0", sizeof(buffer->addr));
-		strncpy(buffer->busspeed, "10Gbit", sizeof(buffer->busspeed));
-		buffer->revision = 0;
-		buffer->product_id = PRODUCT_XTRX;
-		return 1;
+		DIR *d;
+		struct dirent local_dir;
+		struct dirent *dir;
+		unsigned count;
+		d = opendir("/sys/class/xtrx/");
+		if (!d) {
+			XTRXLL_LOG(XTRXLL_WARNING, "XTRX PCIe driver isn't loaded\n");
+			return 0;
+		}
+
+		for (count = 0; count < maxbuf; ){
+			int res = readdir_r(d, &local_dir, &dir);
+			if (res || !dir)
+				break;
+
+			if (dir->d_type != DT_LNK)
+				continue;
+
+			snprintf(buffer[count].uniqname, sizeof(buffer[count].uniqname), "pcie:///dev/%s", dir->d_name);
+			strncpy(buffer[count].proto, "PCIe", sizeof(buffer[count].proto));
+			snprintf(buffer[count].addr, sizeof(buffer[count].addr),"%s", dir->d_name);
+
+			strncpy(buffer[count].busspeed, "10Gbit", sizeof(buffer[count].busspeed));
+			buffer[count].revision = 0;
+			buffer[count].product_id = PRODUCT_XTRX;
+
+			XTRXLL_LOG(XTRXLL_DEBUG, "pcie: Found `%s`\n",
+					   buffer[count].uniqname);
+
+			count++;
+		}
+		return count;
 	}
 	return 0;
 }

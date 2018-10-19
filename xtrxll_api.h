@@ -40,6 +40,8 @@ enum xtrxll_claim_flags {
 	XTRXLL_CLAIM_TX       = 0x0010,
 	XTRXLL_CLAIM_RX       = 0x0020,
 
+	XTRXLL_FULL_DEV_MATCH = 0x0040,
+
 	// Lock transaivers on the same board
 	XTRXLL_CLAIM_DEV_MSK0 = 0x1000,
 	XTRXLL_CLAIM_DEV_MSK1 = 0x2000,
