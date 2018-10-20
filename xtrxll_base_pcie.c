@@ -96,11 +96,11 @@ int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 		unsigned blk_rem  = (bufstat >> RXDMA_BLK_REM) & 0xfff;
 
 		XTRXLL_LOG((bufstat & (1U << RXDMA_OVF)) ? XTRXLL_ERROR : ((force_log) ? XTRXLL_INFO : XTRXLL_DEBUG),
-				   "XTRX %s: RX DMA STAT %c%c %04dQW %c%c%d%d %02d/%02d I:%d\n",
+				   "XTRX %s: RX DMA STAT %c%c %08d Bytes %c%c%d%d %02d/%02d I:%d\n",
 				   dev->base.id,
 				   (bufstat & (1U << RXDMA_OVF)) ? 'O': '-',
 				   (bufstat & (1 << RXDMA_RE)) ?  'E': '-',
-				   blk_rem,
+				   blk_rem * 4 * 8,
 				   (bufstat & (1 << RXDMA_BLK_READY)) ?  'Y': '-',
 				   (bufstat & (1 << RXDMA_FERESET)) ?  'R': '-',
 				   (bufstat >> RXDMA_FEMODE) & 3,

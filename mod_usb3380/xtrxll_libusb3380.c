@@ -470,9 +470,9 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 	if (env_dual_ep) {
 		dual_ep = (atoi(env_dual_ep) > 0) ? true : false;
 	}
-	if (strstr(device, "nodualgpep") != NULL) {
+	if (device && strstr(device, "nodualgpep") != NULL) {
 		dual_ep = false;
-	} else if (strstr(device, "dualgpep") != NULL) {
+	} else if (device && strstr(device, "dualgpep") != NULL) {
 		dual_ep = true;
 	}
 
@@ -481,9 +481,9 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 	if (env_tx_dual_ep) {
 		dual_ep_tx = (atoi(env_tx_dual_ep) > 0) ? true : false;
 	}
-	if (strstr(device, "notxdualgpep") != NULL) {
+	if (device && strstr(device, "notxdualgpep") != NULL) {
 		dual_ep_tx = false;
-	} else if (strstr(device, "txdualgpep") != NULL) {
+	} else if (device && strstr(device, "txdualgpep") != NULL) {
 		dual_ep_tx = true;
 	}
 

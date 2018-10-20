@@ -216,6 +216,46 @@ static int xtrxllpciev0_i2c_cmd(struct xtrxll_base_dev* bdev,
 	return 0;
 }
 
+static int xtrxllpciev0_discovery(xtrxll_device_info_t *buffer, size_t maxbuf)
+{
+	if (maxbuf > 0) {
+		DIR *d;
+		struct dirent local_dir;
+		struct dirent *dir;
+		unsigned count;
+		d = opendir("/sys/class/xtrx/");
+		if (!d) {
+			XTRXLL_LOG(XTRXLL_WARNING, "XTRX PCIe driver isn't loaded\n");
+			return 0;
+		}
+
+		for (count = 0; count < maxbuf; ){
+			int res = readdir_r(d, &local_dir, &dir);
+			if (res || !dir)
+				break;
+
+			if (dir->d_type != DT_LNK)
+				continue;
+
+			snprintf(buffer[count].uniqname, sizeof(buffer[count].uniqname), "pcie:///dev/%s", dir->d_name);
+			strncpy(buffer[count].proto, "PCIe", sizeof(buffer[count].proto));
+			snprintf(buffer[count].addr, sizeof(buffer[count].addr),"%s", dir->d_name);
+
+			strncpy(buffer[count].busspeed, "10Gbit", sizeof(buffer[count].busspeed));
+			buffer[count].revision = 0;
+			buffer[count].product_id = PRODUCT_XTRX;
+
+			XTRXLL_LOG(XTRXLL_DEBUG, "pcie: Found `%s`\n",
+					   buffer[count].uniqname);
+
+			count++;
+		}
+		return count;
+	}
+	return 0;
+}
+
+
 static int xtrxllpciev0_open(const char* device, unsigned flags,
 							 struct xtrxll_base_dev** pdev)
 {
@@ -226,6 +266,17 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 	struct xtrxll_pcie_dev* dev;
 	int err;
 	const char* ldev = device;
+	xtrxll_device_info_t discover;
+
+	if (!device || (*device == 0)) {
+		err = xtrxllpciev0_discovery(&discover, 1);
+		if (err < 0)
+			return err;
+		else if (err == 0)
+			return -ENODEV;
+
+		ldev = device = discover.uniqname;
+	}
 
 	if (strncasecmp(device, "usb3380://", 10) == 0)
 		return -ENODEV;
@@ -323,45 +374,6 @@ static void xtrxllpciev0_close(struct xtrxll_base_dev* bdev)
 	munmap((void*)dev->mmap_stat_buf, XTRXLL_MMAP_CONFREGS_LEN);
 	close(dev->fd);
 	free(dev);
-}
-
-static int xtrxllpciev0_discovery(xtrxll_device_info_t *buffer, size_t maxbuf)
-{
-	if (maxbuf > 0) {
-		DIR *d;
-		struct dirent local_dir;
-		struct dirent *dir;
-		unsigned count;
-		d = opendir("/sys/class/xtrx/");
-		if (!d) {
-			XTRXLL_LOG(XTRXLL_WARNING, "XTRX PCIe driver isn't loaded\n");
-			return 0;
-		}
-
-		for (count = 0; count < maxbuf; ){
-			int res = readdir_r(d, &local_dir, &dir);
-			if (res || !dir)
-				break;
-
-			if (dir->d_type != DT_LNK)
-				continue;
-
-			snprintf(buffer[count].uniqname, sizeof(buffer[count].uniqname), "pcie:///dev/%s", dir->d_name);
-			strncpy(buffer[count].proto, "PCIe", sizeof(buffer[count].proto));
-			snprintf(buffer[count].addr, sizeof(buffer[count].addr),"%s", dir->d_name);
-
-			strncpy(buffer[count].busspeed, "10Gbit", sizeof(buffer[count].busspeed));
-			buffer[count].revision = 0;
-			buffer[count].product_id = PRODUCT_XTRX;
-
-			XTRXLL_LOG(XTRXLL_DEBUG, "pcie: Found `%s`\n",
-					   buffer[count].uniqname);
-
-			count++;
-		}
-		return count;
-	}
-	return 0;
 }
 
 static int xtrxllpciev0_dma_rx_init(struct xtrxll_base_dev* bdev, int chan,
@@ -585,7 +597,7 @@ static int xtrxllpciev0_dma_tx_getfree_ex(struct xtrxll_base_dev* bdev,
 		if (res == 0) {
 			break;
 		} else if (res == -EBUSY) {
-			diag = true;
+			//diag = true;
 			unsigned tm = timeout_ms;
 			if (tm > 1000) {
 				tm = 1000;
