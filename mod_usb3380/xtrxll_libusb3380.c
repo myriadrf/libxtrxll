@@ -1521,7 +1521,10 @@ const struct xtrxll_ops* xtrxllusb3380v0_init(unsigned abi_version)
 	return NULL;
 }
 
+#ifndef XTRXLL_STATIC
 const struct xtrxll_ops* xtrxll_init(unsigned abi_version)
 {
 	return xtrxllusb3380v0_init(abi_version);
 }
+#endif
+

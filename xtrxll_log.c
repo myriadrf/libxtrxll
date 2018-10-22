@@ -102,7 +102,9 @@ out_truncated:
 void xtrxll_log_initialize(FILE* logfile)
 {
 	if (logfile == NULL) {
-		s_logfile = stderr;
+		if (s_logfile == NULL) {
+			s_logfile = stderr;
+		}
 	} else {
 		s_logfile = logfile;
 	}

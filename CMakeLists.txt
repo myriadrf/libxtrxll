@@ -72,16 +72,12 @@ endif(CMAKE_COMPILER_IS_GNUCC)
 
 add_definitions(-Wall -g)
 
-###############################################################################
-# common files that shares among protocol specific drivers
-###############################################################################
-
-add_library(xtrxll SHARED
-	xtrxll_log.c xtrxll_port.c xtrxll_base.c xtrxll_base_pcie.c
-	xtrxll_mmcm.c xtrxll_flash.c xtrxll_api.c)
-target_link_libraries(xtrxll ${SYSTEM_LIBS})
-set_target_properties(xtrxll PROPERTIES VERSION ${LIBVER} SOVERSION ${MAJOR_VERSION})
-
+option(XTRXLL_STATIC "XTRXLL Static plugin linkage" ON)
+if(XTRXLL_STATIC)
+	set(PLUGIN_TYPE STATIC)
+else(XTRXLL_STATIC)
+	set(PLUGIN_TYPE SHARED)
+endif(XTRXLL_STATIC)
 
 ###############################################################################
 # protocol specific drivers
@@ -107,8 +103,33 @@ if(ENABLE_USB3380)
 	message(STATUS "xtrxll: USB3380 support enabled")
 endif(ENABLE_USB3380)
 
-add_subdirectory(tests)
+###############################################################################
+# common files that shares among protocol specific drivers
+###############################################################################
+if(ENABLE_PCIE)
+	add_definitions(-DENABLE_PCIE)
+endif(ENABLE_PCIE)
+if(ENABLE_USB3380)
+	add_definitions(-DENABLE_USB3380)
+endif(ENABLE_USB3380)
+if(XTRXLL_STATIC)
+	add_definitions(-DXTRXLL_STATIC)
+endif(XTRXLL_STATIC)
 
+add_library(xtrxll SHARED
+	xtrxll_log.c xtrxll_port.c xtrxll_base.c xtrxll_base_pcie.c
+	xtrxll_mmcm.c xtrxll_flash.c xtrxll_api.c)
+target_link_libraries(xtrxll ${SYSTEM_LIBS})
+if(XTRXLL_STATIC AND ENABLE_PCIE)
+	target_link_libraries(xtrxll xtrxll_pcie)
+endif()
+if(XTRXLL_STATIC AND ENABLE_USB3380)
+	target_link_libraries(xtrxll xtrxll_libusb3380)
+endif()
+set_target_properties(xtrxll PROPERTIES VERSION ${LIBVER} SOVERSION ${MAJOR_VERSION})
+
+
+add_subdirectory(tests)
 install(TARGETS xtrxll DESTINATION ${XTRXLL_LIBRARY_DIR})
 
 

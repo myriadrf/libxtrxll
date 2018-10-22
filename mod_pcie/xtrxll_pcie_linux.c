@@ -317,7 +317,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 	}
 
 	dev->fd = fd;
-	snprintf(dev->pcie_devname, DEV_NAME_SIZE - 1, "PCI_%d", fd);
+	snprintf(dev->pcie_devname, DEV_NAME_SIZE - 1, "PCI:%s", ldev);
 	dev->mmap_xtrxll_regs = (volatile uint32_t* )mem;
 	dev->mmap_rx_kernel_buf = NULL;
 	dev->mmap_tx_kernel_buf = NULL;
@@ -797,8 +797,11 @@ const struct xtrxll_ops* xtrxllpciev0_init(unsigned abi_version)
 	return NULL;
 }
 
+#ifndef XTRXLL_STATIC
 // Only when dynamic plugin is on
 const struct xtrxll_ops* xtrxll_init(unsigned abi_version)
 {
 	return xtrxllpciev0_init(abi_version);
 }
+#endif
+

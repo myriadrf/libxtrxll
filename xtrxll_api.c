@@ -34,6 +34,8 @@
 #include "xtrxll_api.h"
 #include "xtrxll_base.h"
 
+#ifndef XTRXLL_STATIC
+
 struct xtrxll_driver
 {
 	struct xtrxll_driver* next;
@@ -202,6 +204,63 @@ int xtrxll_discovery(xtrxll_device_info_t *buffer, size_t maxbuf)
 
 	return maxbuf - remaining;
 }
+#else
+#ifdef ENABLE_PCIE
+#include "mod_pcie/xtrxll_pcie_linux.h"
+#endif
+#ifdef ENABLE_USB3380
+#include "mod_usb3380/xtrxll_libusb3380.h"
+#endif
+
+typedef const struct xtrxll_ops* (*xtrxll_init_func_t)(unsigned);
+
+static xtrxll_init_func_t s_initfuncs[] = {
+#ifdef ENABLE_PCIE
+	xtrxllpciev0_init,
+#endif
+#ifdef ENABLE_USB3380
+	xtrxllusb3380v0_init,
+#endif
+};
+
+#define XTRXLL_PLUG_COUNT (sizeof(s_initfuncs)/sizeof(s_initfuncs[0]))
+
+int xtrxll_open(const char* device, unsigned flags, struct xtrxll_dev** odev)
+{
+	int res;
+	struct xtrxll_base_dev* under_dev;
+	for (unsigned i = 0; i < XTRXLL_PLUG_COUNT; i++) {
+		res = s_initfuncs[i](XTRXLL_ABI_VERSION)->open(device, flags, &under_dev);
+		if (res) {
+			continue;
+		}
+
+		*odev = (struct xtrxll_dev*)under_dev;
+		return 0;
+	}
+
+	return -ENODEV;
+}
+
+int xtrxll_discovery(xtrxll_device_info_t *buffer, size_t maxbuf)
+{
+	size_t remaining = maxbuf;
+	xtrxll_device_info_t* ptr = buffer;
+
+	xtrxll_log_initialize(NULL);
+
+	for (unsigned i = 0; i < XTRXLL_PLUG_COUNT; i++) {
+		int count = s_initfuncs[i](XTRXLL_ABI_VERSION)->discovery(ptr, remaining);
+		if (count > 0) {
+			ptr += count;
+			remaining -= count;
+		}
+	}
+
+	return maxbuf - remaining;
+}
+
+#endif
 
 void xtrxll_close(struct xtrxll_dev* dev)
 {
