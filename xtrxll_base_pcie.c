@@ -46,6 +46,7 @@ int xtrxllpciebase_init(struct xtrxll_base_pcie_dma* dev)
 	dev->tx_late_bursts = 0;
 
 	dev->rx_owf_detected = false;
+	dev->rx_running = false;
 	return 0;
 }
 
@@ -80,6 +81,9 @@ int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 	bool force_log = (flags & PCIEDMARX_FORCE_LOG);
 	bool no_upd = (flags & PCIEDMARX_NO_CNTR_UPD);
 	bool no_chk = (flags & PCIEDMARX_NO_CNTR_CHECK);
+
+	if (!dev->rx_running)
+		return -EPIPE;
 
 	unsigned bufno, bufno_rd;
 	int res;
@@ -528,6 +532,10 @@ int xtrxllpciebase_dma_start(struct xtrxll_base_pcie_dma* dev, int chan,
 	if (res)
 		return res;
 
+	if (rxfe != XTRXLL_FE_STOP) {
+		dev->rx_running = true;
+	}
+
 	if (rxfe != XTRXLL_FE_DONTTOUCH && rxfe != XTRXLL_FE_STOP && rx_start_sample) {
 		xtrxllpciebase_dmarx_resume(dev, chan, rx_start_sample);
 	}
@@ -540,6 +548,8 @@ int xtrxllpciebase_dma_start(struct xtrxll_base_pcie_dma* dev, int chan,
 								(1UL << (WR_RXDMA_FE_RESET + GP_PORT_WR_RXTXDMA_RXOFF)));
 		if (res)
 			return res;
+
+		dev->rx_running = false;
 	}
 	return 0;
 }

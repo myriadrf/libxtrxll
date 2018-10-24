@@ -460,11 +460,10 @@ static int xtrxllpciev0_dma_rx_getnext(struct xtrxll_base_dev* bdev, int chan,
 	unsigned bn;
 	int res;
 	bool force_log = false;
+	const int DEFAULT_TIMEOUT_MS = 200;
 
 	uint32_t icnt = __atomic_exchange_n((uint32_t*)dev->mmap_stat_buf + XTRX_KERN_MMAP_RX_IRQS,
 										0, __ATOMIC_SEQ_CST);
-//	uint32_t icnt = 0;
-//goto start;
 
 	for (;;) {
 		//		uint32_t icnt = __atomic_exchange_n((int32_t*)dev->mmap_stat_buf + XTRX_KERN_MMAP_RX_IRQS,
@@ -488,8 +487,11 @@ static int xtrxllpciev0_dma_rx_getnext(struct xtrxll_base_dev* bdev, int chan,
 			if (flags & XTRXLL_RX_DONTWAIT) {
 				return -EAGAIN;
 			}
-//start:;
-			int toval = (flags & XTRXLL_RX_REPORT_TIMEOUT) ? timeout_ms : 0;
+			if (!dev->pcie.rx_running) {
+				return -EPIPE;
+			}
+
+			int toval = (flags & XTRXLL_RX_REPORT_TIMEOUT) ? timeout_ms : DEFAULT_TIMEOUT_MS;
 			ssize_t err = pread(dev->fd, NULL, toval, XTRX_KERN_MMAP_RX_IRQS);
 			if (err < 0) {
 				res = errno;

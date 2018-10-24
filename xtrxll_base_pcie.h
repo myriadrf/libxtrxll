@@ -69,6 +69,7 @@ struct xtrxll_base_pcie_dma {
 	int tx_late_bursts;
 
 	bool rx_owf_detected;
+	bool rx_running;
 };
 
 enum {
