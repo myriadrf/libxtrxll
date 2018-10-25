@@ -22,70 +22,85 @@
 #include <stdarg.h>
 #include <unistd.h>
 
-enum xtrxll_loglevel s_loglevel = XTRXLL_DEBUG_REGS;
 
-static FILE* s_logfile;
-static int s_colorize;
+static void s_def_logging(int l,
+						  const struct tm* stm,
+						  int nsec,
+						  const char sybsystem[4],
+						  const char* function,
+						  const char* file,
+						  int lineno,
+						  const char* fmt,
+						  va_list list);
+
+enum xtrxll_loglevel s_loglevel = XTRXLL_DEBUG_REGS;
+static FILE* s_logfile = NULL;
+static int s_colorize = 0;
+static logfunc_t s_log_function = s_def_logging;
 
 static const char* s_term_name[] =
 {
 	"\033[0m",
-	"\033[0;31mERROR:   ",
-	"\033[0;32mWARNING: ",
-	"\033[0;33mINFO:    ",
-	"\033[0;34mRFIC:    ",
-	"\033[0;35mDEBUG:   ",
-	"\033[0;36mREGS:    ",
-	"\033[0;37mTRACE:   ",
+	"\033[0;31mERROR: ",
+	"\033[0;32mWARN:  ",
+	"\033[0;33mINFO:  ",
+	"\033[0;34mRFIC:  ",
+	"\033[0;35mDEBUG: ",
+	"\033[0;36mREGS:  ",
+	"\033[0;37mTRACE: ",
 };
 
-static void s_def_logging(int sevirity, const char* message)
-{
-	(void)sevirity;
-	fputs(message, s_logfile);
-}
-
-static logfunc_t s_log_function = s_def_logging;
-
-void xtrxll_set_logfunc(logfunc_t function)
-{
-	s_log_function = (function) ? function : s_def_logging;
-}
-
 #define MAX_LOG_LINE 1024
-void xtrxll_log(enum xtrxll_loglevel l, const char* func, int line,
-				const char* fmt, ...)
+void s_def_logging(int l,
+				   const struct tm* stm,
+				   int nsec,
+				   const char sybsystem[4],
+				   const char* function,
+				   const char* file,
+				   int lineno,
+				   const char* fmt,
+				   va_list list)
 {
-	(void)func;
-	(void)line;
-
-	if (s_loglevel < l)
-		return;
-
-	va_list ap;
-	struct timespec tp;
+	(void)file;
 	char buf[MAX_LOG_LINE];
-	int sz;
 	size_t stsz;
+	int sz;
 
-	va_start(ap, fmt);
-
-	clock_gettime(CLOCK_REALTIME, &tp);
-	stsz = strftime(buf, sizeof(buf), "%H:%M:%S.", xtrxll_localtime(tp.tv_sec));
+	stsz = strftime(buf, sizeof(buf), "%H:%M:%S.", stm);
 	sz = snprintf(buf + stsz - 1, sizeof(buf) - stsz, ".%06d %s",
-				  (int)(tp.tv_nsec/1000),
+				  (int)(nsec/1000),
 				  s_term_name[l] + ((s_colorize > 0) ? 0 : 7));
 	if (sz < 0) {
 		buf[MAX_LOG_LINE - 1] = 0;
 		goto out_truncated;
 	}
 	stsz += (size_t)sz;
-	sz = vsnprintf(buf + stsz - 1, sizeof(buf) - stsz, fmt, ap);
+
+	if (s_loglevel > XTRXLL_DEBUG) {
+		sz = snprintf(buf + stsz - 1, sizeof(buf) - stsz, " %s:%d [%4.4s] ",
+					  function, lineno,
+					  sybsystem);
+	} else {
+		sz = snprintf(buf + stsz - 1, sizeof(buf) - stsz, " [%4.4s] ",
+					  sybsystem);
+	}
 	if (sz < 0) {
 		buf[MAX_LOG_LINE - 1] = 0;
 		goto out_truncated;
 	}
 	stsz += (size_t)sz;
+	sz = vsnprintf(buf + stsz - 1, sizeof(buf) - stsz, fmt, list);
+	if (sz < 0) {
+		buf[MAX_LOG_LINE - 1] = 0;
+		goto out_truncated;
+	}
+	stsz += (size_t)sz;
+	if (buf[stsz-2] != '\n') {
+		buf[stsz-1] = '\n';
+		buf[stsz] = 0;
+		stsz++;
+	}
+
 	if (s_colorize) {
 		sz = snprintf(buf + stsz - 1, sizeof(buf) - stsz, "%s", s_term_name[0]);
 		if (sz < 0) {
@@ -94,9 +109,49 @@ void xtrxll_log(enum xtrxll_loglevel l, const char* func, int line,
 	}
 
 out_truncated:
-	s_log_function(l, buf);
+	fputs(buf, s_logfile);
+}
+
+
+void xtrxll_set_logfunc(logfunc_t function)
+{
+	s_log_function = (function) ? function : s_def_logging;
+}
+
+
+void xtrxll_log(enum xtrxll_loglevel l,
+				const char sybsystem[4],
+				const char* function,
+				const char *file,
+				int line,
+				const char* fmt, ...)
+{
+	if (s_loglevel < l)
+		return;
+
+	va_list ap;
+	va_start(ap, fmt);
+	xtrxll_vlog(l, sybsystem, function, file, line, fmt, ap);
 	va_end(ap);
 }
+
+void xtrxll_vlog(enum xtrxll_loglevel l,
+				 const char sybsystem[4],
+				 const char* function,
+				 const char *file,
+				 int line,
+				 const char* fmt, va_list list)
+{
+	if (s_loglevel < l)
+		return;
+
+	struct timespec tp;
+	clock_gettime(CLOCK_REALTIME, &tp);
+	const struct tm* stm = xtrxll_localtime(tp.tv_sec);
+
+	s_log_function(l, stm, (int)tp.tv_nsec, sybsystem, function, file, line, fmt, list);
+}
+
 
 
 void xtrxll_log_initialize(FILE* logfile)

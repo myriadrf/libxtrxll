@@ -195,7 +195,7 @@ static int _xtrxllr3_io_set(struct xtrxll_base_dev* dev, unsigned vio_mv)
 	if (res)
 		return res;
 
-	XTRXLL_LOG(XTRXLL_INFO, "FPGA V_IO set to %04dmV\n", vio_mv);
+	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: FPGA V_IO set to %04dmV\n", dev->id, vio_mv);
 	return 0;
 }
 
@@ -208,7 +208,7 @@ static int _xtrxllr3_d12_set(struct xtrxll_base_dev* dev, unsigned vd12_mv)
 	if (res)
 		return res;
 
-	XTRXLL_LOG(XTRXLL_INFO, "FPGA V_D12 / LMS DVDD set to %04dmV\n", vd12_mv);
+	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: FPGA V_D12 / LMS DVDD set to %04dmV\n", dev->id, vd12_mv);
 	return 0;
 }
 
@@ -221,7 +221,7 @@ static int _xtrxllr3_aux_set(struct xtrxll_base_dev* dev, unsigned vaux_mv)
 	if (res)
 		return res;
 
-	XTRXLL_LOG(XTRXLL_INFO, "FPGA V_AUX set to %04dmV\n", vaux_mv);
+	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: FPGA V_AUX set to %04dmV\n", dev->id, vaux_mv);
 	return 0;
 }
 
@@ -242,7 +242,8 @@ static int _xtrxllr3_pmic_lms_set(struct xtrxll_base_dev* dev, unsigned extra_dr
 	if (res)
 		return res;
 
-	XTRXLL_LOG(XTRXLL_INFO, "LMS PMIC: DCDC out set to V18=%04dmV V33=%04dmV V14=%04dmV V12=%04dmV\n",
+	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: LMS PMIC DCDC out set to V18=%04dmV V33=%04dmV V14=%04dmV V12=%04dmV\n",
+				dev->id,
 			   V_LMS_1V8 + extra_drop,
 			   V_XTRX_XO + extra_drop,
 			   V_LMS_1V4 + extra_drop,
@@ -517,7 +518,7 @@ static int xtrvxllv0_lms7_ant(struct xtrxll_base_dev* dev, unsigned rx_ant, unsi
 									UL_GP_ADDR + GP_PORT_WR_RF_SWITCHES,
 									((tx_ant & 1) << 2) | (rx_ant & 3) );
 
-	XTRXLL_LOG(XTRXLL_INFO,  "XTRX %s: RX_ANT: %d TX_ANT: %d\n",
+	XTRXLLS_LOG("CTRL", XTRXLL_INFO,  "%s: RX_ANT: %d TX_ANT: %d\n",
 			   dev->id, (rx_ant & 3), (tx_ant & 1));
 	return res;
 }
@@ -562,7 +563,7 @@ static int xtrvxllv0_drp_get(struct xtrxll_base_dev* dev, unsigned drpno,
 	if (res)
 		return res;
 
-	XTRXLL_LOG(XTRXLL_DEBUG, "XTRX %s: MMCM -> %04x (%04x.%04x.%04x.%04x)\n",
+	XTRXLLS_LOG("CTRL", XTRXLL_DEBUG, "%s: MMCM -> %04x (%04x.%04x.%04x.%04x)\n",
 			   dev->id,
 			   regin & 0xffff,
 			   (regin >> 16) & 0xf, (regin >> 20) & 0xf,
@@ -587,11 +588,11 @@ static int xtrvxllv0_issue_timmed_command(struct xtrxll_base_dev* dev,
 		return res;
 
 	if (!(stat & (1 << RD_TCMDSTAT_FIFOREADY))) {
-		XTRXLL_LOG(XTRXLL_WARNING, "XTRX %s: timmend command queue is full\n", dev->id);
+		XTRXLLS_LOG("CTRL", XTRXLL_WARNING, "%s: timmend command queue is full\n", dev->id);
 		return -EAGAIN;
 	}
 
-	XTRXLL_LOG(XTRXLL_INFO, "XTRX %s: Placing TC @%d on %d data: %x stat:%x\n",
+	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: Placing TC @%d on %d data: %x stat:%x\n",
 							 dev->id, time, route, data, stat);
 
 	res = dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_TCMD_D, data);
@@ -785,13 +786,13 @@ int xtrxll_base_dev_init(struct xtrxll_base_dev* dev,
 
 	switch (GET_FWID(dev->hwid)) {
 	case FWID_XTRX_R3:
-		XTRXLL_LOG(XTRXLL_INFO, "XTRX %s: XTRX Rev3 (%08x)\n", dev->id, dev->hwid);
+		XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: XTRX Rev3 (%08x)\n", dev->id, dev->hwid);
 		return 0;
 	case FWID_XTRX_R4:
-		XTRXLL_LOG(XTRXLL_INFO, "XTRX %s: XTRX Rev4 (%08x)\n", dev->id, dev->hwid);
+		XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: XTRX Rev4 (%08x)\n", dev->id, dev->hwid);
 		return 0;
 	}
 
-	XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Unrecognized HWID %08x!\n", dev->id, dev->hwid);
+	XTRXLLS_LOG("CTRL", XTRXLL_ERROR, "%s: Unrecognized HWID %08x!\n", dev->id, dev->hwid);
 	return -ENOTSUP;
 }

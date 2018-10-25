@@ -106,7 +106,7 @@ static void internal_xtrxll_reg_out_n(struct xtrxll_pcie_dev* dev,
 	//}
 	__atomic_thread_fence(__ATOMIC_SEQ_CST);
 
-	XTRXLL_LOG(XTRXLL_DEBUG_REGS, "XTRX %s: Write [%04x+%d] = %08x\n",
+	XTRXLLS_LOG("PCIE", XTRXLL_DEBUG_REGS, "%s: Write [%04x+%d] = %08x\n",
 			   dev->base.id, streg, count, outval[0]);
 }
 
@@ -128,7 +128,7 @@ static void internal_xtrxll_reg_in_n(struct xtrxll_pcie_dev* dev,
 		inval[i] = be32toh(to_read[i]);
 	}
 
-	XTRXLL_LOG(XTRXLL_DEBUG_REGS, "XTRX %s: Read [%04x+%d] = %08x\n",
+	XTRXLLS_LOG("PCIE", XTRXLL_DEBUG_REGS, "%s: Read [%04x+%d] = %08x\n",
 			   dev->base.id, streg, count, inval[0]);
 }
 
@@ -138,7 +138,7 @@ static void internal_xtrxll_reg_out(struct xtrxll_pcie_dev* dev, unsigned reg,
 	__atomic_store_n(&dev->mmap_xtrxll_regs[reg], htobe32(outval),
 					 /*__ATOMIC_RELEASE*/ __ATOMIC_SEQ_CST);
 
-	XTRXLL_LOG(XTRXLL_DEBUG_REGS, "XTRX %s: Write [%04x] = %08x\n",
+	XTRXLLS_LOG("PCIE", XTRXLL_DEBUG_REGS, "%s: Write [%04x] = %08x\n",
 			   dev->base.id, reg, outval);
 }
 
@@ -147,7 +147,7 @@ static uint32_t internal_xtrxll_reg_in(struct xtrxll_pcie_dev* dev, unsigned reg
 	uint32_t val = be32toh(__atomic_load_n(&dev->mmap_xtrxll_regs[reg],
 										   /*__ATOMIC_ACQUIRE*/ __ATOMIC_SEQ_CST));
 
-	XTRXLL_LOG(XTRXLL_DEBUG_REGS, "XTRX %s: Read  [%04x] = %08x\n",
+	XTRXLLS_LOG("PCIE", XTRXLL_DEBUG_REGS, "%s: Read  [%04x] = %08x\n",
 			   dev->base.id, reg, val);
 	return val;
 }
@@ -181,7 +181,7 @@ static int xtrxllpciev0_lms7_spi_bulk(struct xtrxll_base_dev* bdev,
 			icnt = pread(dev->fd, NULL, 0, XTRX_KERN_MMAP_CTRL_IRQS);
 			if (icnt < 0) {
 				int err = errno;
-				if (err != -EAGAIN) {
+				if (err != EAGAIN) {
 					XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: SPI IRQ error %d (%d)\n",
 							   dev->base.id, err, XTRX_KERN_MMAP_CTRL_IRQS);
 					return -err;
@@ -225,7 +225,7 @@ static int xtrxllpciev0_discovery(xtrxll_device_info_t *buffer, size_t maxbuf)
 		unsigned count;
 		d = opendir("/sys/class/xtrx/");
 		if (!d) {
-			XTRXLL_LOG(XTRXLL_WARNING, "XTRX PCIe driver isn't loaded\n");
+			XTRXLLS_LOG("PCIE", XTRXLL_WARNING, "XTRX PCIe driver isn't loaded\n");
 			return 0;
 		}
 
@@ -245,7 +245,7 @@ static int xtrxllpciev0_discovery(xtrxll_device_info_t *buffer, size_t maxbuf)
 			buffer[count].revision = 0;
 			buffer[count].product_id = PRODUCT_XTRX;
 
-			XTRXLL_LOG(XTRXLL_DEBUG, "pcie: Found `%s`\n",
+			XTRXLLS_LOG("PCIE", XTRXLL_DEBUG, "pcie: Found `%s`\n",
 					   buffer[count].uniqname);
 
 			count++;
@@ -286,7 +286,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 	int fd = open(ldev, O_RDWR);
 	if (fd < 0) {
 		err = errno;
-		XTRXLL_LOG(XTRXLL_ERROR, "Can't open device `%s`: %s\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_ERROR, "Can't open device `%s`: %s\n",
 				   ldev, strerror_safe(err));
 		goto failed_open;
 	}
@@ -295,7 +295,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 					 MAP_SHARED, fd, XTRXLL_MMAP_CONFREGS_OFF);
 	if (mem == MAP_FAILED) {
 		err = errno;
-		XTRXLL_LOG(XTRXLL_ERROR, "Can't mmap config area for device `%s`: %s\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_ERROR, "Can't mmap config area for device `%s`: %s\n",
 				   ldev, strerror_safe(err));
 		goto failed_mmap;
 	}
@@ -303,7 +303,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 	mem_stat = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 4096*1024);
 	if (mem_stat == MAP_FAILED) {
 		err = errno;
-		XTRXLL_LOG(XTRXLL_ERROR, "Can't mmap stat area for device `%s`: %s\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_ERROR, "Can't mmap stat area for device `%s`: %s\n",
 				   ldev, strerror_safe(err));
 		goto failed_mmap2;
 	}
@@ -311,7 +311,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 	dev = (struct xtrxll_pcie_dev*)malloc(sizeof(struct xtrxll_pcie_dev));
 	if (dev == NULL) {
 		err = errno;
-		XTRXLL_LOG(XTRXLL_ERROR, "Can't allocate memory for device `%s`: %s\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_ERROR, "Can't allocate memory for device `%s`: %s\n",
 				   ldev, strerror_safe(err));
 		goto failed_malloc;
 	}
@@ -330,7 +330,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 
 	err = xtrxllpciebase_init(&dev->pcie);
 	if (err) {
-		XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Failed to init DMA subsystem\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_ERROR, "%s: Failed to init DMA subsystem\n",
 				   dev->base.id);
 		goto failed_abi_ctrl;
 	}
@@ -348,7 +348,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 							//(4U << 17) | /* 2048 B max_req_size */
 							(1 << INT_PCIE_I_FLAG) | ( 0xfff ));
 
-	XTRXLL_LOG(XTRXLL_INFO,  "XTRX %s: Device `%s` was opened\n",
+	XTRXLLS_LOG("PCIE", XTRXLL_INFO,  "%s: Device `%s` was opened\n",
 			   dev->base.id, device);
 	return 0;
 
@@ -368,7 +368,7 @@ static void xtrxllpciev0_close(struct xtrxll_base_dev* bdev)
 {
 	struct xtrxll_pcie_dev* dev = (struct xtrxll_pcie_dev*)bdev;
 
-	XTRXLL_LOG(XTRXLL_INFO,  "XTRX %s: Device closing\n", dev->base.id);
+	XTRXLLS_LOG("PCIE", XTRXLL_INFO,  "%s: Device closing\n", dev->base.id);
 
 	munmap((void*)dev->mmap_xtrxll_regs, XTRXLL_MMAP_CONFREGS_LEN);
 	munmap((void*)dev->mmap_stat_buf, XTRXLL_MMAP_CONFREGS_LEN);
@@ -385,7 +385,7 @@ static int xtrxllpciev0_dma_rx_init(struct xtrxll_base_dev* bdev, int chan,
 	if (chan !=0)
 		return -EINVAL;
 	if (buf_szs % 16 || buf_szs > RXDMA_MMAP_BUFF) {
-		XTRXLL_LOG(XTRXLL_ERROR, "Wire RX pkt size is %d, should be rounded to 128 bit and less %d\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_ERROR, "Wire RX pkt size is %d, should be rounded to 128 bit and less %d\n",
 				   buf_szs, RXDMA_MMAP_BUFF);
 		return -EINVAL;
 	} else if (buf_szs == 0) {
@@ -397,16 +397,16 @@ static int xtrxllpciev0_dma_rx_init(struct xtrxll_base_dev* bdev, int chan,
 					   dev->fd, XTRX_MMAP_RX_OFF);
 		if (m == MAP_FAILED) {
 			err = errno;
-			XTRXLL_LOG(XTRXLL_ERROR,  "XTRX %s: DMA RX mmap*() failed: %s\n",
+			XTRXLLS_LOG("PCIE", XTRXLL_ERROR,  "%s: DMA RX mmap*() failed: %s\n",
 					   dev->base.id, strerror_safe(err));
 			goto failed;
 		}
-		XTRXLL_LOG(XTRXLL_DEBUG,  "XTRX %s: DMA RX mmaped to %p\n", dev->base.id, m);
+		XTRXLLS_LOG("PCIE", XTRXLL_DEBUG,  "%s: DMA RX mmaped to %p\n", dev->base.id, m);
 		dev->mmap_rx_kernel_buf = m;
 	}
 	err = ioctl(dev->fd, 0x123459, buf_szs / 16);
 	if (err) {
-		XTRXLL_LOG(XTRXLL_ERROR,  "XTRX %s: Unable to set desired buffer size %d\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_ERROR,  "%s: Unable to set desired buffer size %d\n",
 				   dev->base.id, buf_szs);
 		return -EFAULT;
 	}
@@ -429,11 +429,11 @@ static int xtrxllpciev0_dma_rx_deinit(struct xtrxll_base_dev* bdev, int chan)
 	err = munmap(dev->mmap_rx_kernel_buf, RXDMA_MMAP_SIZE);
 	if (err) {
 		err = errno;
-		XTRXLL_LOG(XTRXLL_DEBUG,  "XTRX %s: DMA RX unmmap error: %s\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_DEBUG,  "%s: DMA RX unmmap error: %s\n",
 				   dev->base.id, strerror_safe(err));
 		return -err;
 	} else {
-		XTRXLL_LOG(XTRXLL_DEBUG,  "XTRX %s: DMA RX unmmaped\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_DEBUG,  "%s: DMA RX unmmaped\n",
 				   dev->base.id);
 	}
 	return 0;
@@ -496,7 +496,7 @@ static int xtrxllpciev0_dma_rx_getnext(struct xtrxll_base_dev* bdev, int chan,
 			if (err < 0) {
 				res = errno;
 				if (res != EAGAIN) {
-					XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: RX DMA error %d (to: %d)\n",
+					XTRXLLS_LOG("PCIE", XTRXLL_ERROR, "%s: RX DMA error %d (to: %d)\n",
 							   dev->base.id, res, timeout_ms);
 					return -EFAULT;
 				} else if (flags & XTRXLL_RX_REPORT_TIMEOUT) {
@@ -507,7 +507,7 @@ static int xtrxllpciev0_dma_rx_getnext(struct xtrxll_base_dev* bdev, int chan,
 				icnt = err;
 			}
 		} else {
-			XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Got %d!\n",
+			XTRXLLS_LOG("PCIE", XTRXLL_ERROR, "%s: Got %d!\n",
 					   dev->base.id, res);
 			return res;
 		}
@@ -525,7 +525,7 @@ static int xtrxllpciev0_dma_rx_release(struct xtrxll_base_dev* bdev, int chan,
 		return -EINVAL;
 
 	unsigned bufno = ((char*)addr - (char*)dev->mmap_rx_kernel_buf) / RXDMA_MMAP_BUFF;
-	XTRXLL_LOG(XTRXLL_DEBUG,  "XTRX %s: RX DMA RELEASE %d\n", dev->base.id, bufno);
+	XTRXLLS_LOG("PCIE", XTRXLL_DEBUG,  "%s: RX DMA RELEASE %d\n", dev->base.id, bufno);
 
 	if (bufno > 0x1f)
 		return -EINVAL;
@@ -550,12 +550,12 @@ static int xtrxllpciev0_dma_tx_init(struct xtrxll_base_dev* bdev, int chan,
 				   dev->fd, XTRX_MMAP_TX_OFF);
 	if (m == MAP_FAILED) {
 		err = -errno;
-		XTRXLL_LOG(XTRXLL_ERROR,  "XTRX %s: DMA TX mmap*() failed: %s\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_ERROR,  "%s: DMA TX mmap*() failed: %s\n",
 				   dev->base.id, strerror_safe(err));
 		goto failed;
 	}
 
-	XTRXLL_LOG(XTRXLL_DEBUG,  "XTRX %s: DMA TX mmaped to %p\n",
+	XTRXLLS_LOG("PCIE", XTRXLL_DEBUG,  "%s: DMA TX mmaped to %p\n",
 			   dev->base.id, m);
 	dev->mmap_tx_kernel_buf = m;
 	return 0;
@@ -573,11 +573,11 @@ static int xtrxllpciev0_dma_tx_deinit(struct xtrxll_base_dev* bdev, int chan)
 	err = munmap(dev->mmap_tx_kernel_buf, TXDMA_MMAP_SIZE);
 	if (err) {
 		err = errno;
-		XTRXLL_LOG(XTRXLL_DEBUG,  "XTRX %s: DMA TX unmmap error: %s\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_DEBUG,  "%s: DMA TX unmmap error: %s\n",
 				   dev->base.id ,strerror_safe(err));
 		return -err;
 	} else {
-		XTRXLL_LOG(XTRXLL_DEBUG,  "XTRX %s: DMA TX unmmaped\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_DEBUG,  "%s: DMA TX unmmaped\n",
 				   dev->base.id);
 	}
 	return 0;
@@ -608,7 +608,7 @@ static int xtrxllpciev0_dma_tx_getfree_ex(struct xtrxll_base_dev* bdev,
 			if (err < 0) {
 				res = errno;
 				if (res != EAGAIN) {
-					XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: TX DMA error %d (to: %d)\n",
+					XTRXLLS_LOG("PCIE", XTRXLL_ERROR, "%s: TX DMA error %d (to: %d)\n",
 							   dev->base.id, res, timeout_ms);
 					return -EFAULT;
 				}
@@ -618,12 +618,12 @@ static int xtrxllpciev0_dma_tx_getfree_ex(struct xtrxll_base_dev* bdev,
 				}
 				return -EBUSY;
 			}
-			//XTRXLL_LOG(XTRXLL_INFO, "Got:%d (%d)\n", err, icnt);
+			//XTRXLLS_LOG("PCIE", XTRXLL_INFO, "Got:%d (%d)\n", err, icnt);
 		} else {
 			return res;
 		}
 	}
-	//XTRXLL_LOG(XTRXLL_INFO, "Got buffer:%d\n", bufno);
+	//XTRXLLS_LOG("PCIE", XTRXLL_INFO, "Got buffer:%d\n", bufno);
 
 	if (late) {
 		*late = ilate;
@@ -656,12 +656,12 @@ static int xtrxllpciev0_repeat_tx_buf(struct xtrxll_base_dev* bdev, int chan,
 					   dev->fd, XTRX_MMAP_TX_BUF_OFF);
 		if (m == MAP_FAILED) {
 			err = errno;
-			XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: DMA RX mmap*() failed: %s\n",
+			XTRXLLS_LOG("PCIE", XTRXLL_ERROR, "%s: DMA RX mmap*() failed: %s\n",
 					   dev->base.id, strerror_safe(err));
 			goto failed;
 		}
 
-		XTRXLL_LOG(XTRXLL_DEBUG, "XTRX %s: DMA RX mmaped to %p\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_DEBUG, "%s: DMA RX mmaped to %p\n",
 				   dev->base.id, m);
 		dev->mmap_tx_device_buf = m;
 	}

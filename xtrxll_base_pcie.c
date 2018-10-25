@@ -64,7 +64,7 @@ int xtrxllpciebase_dmarx_stat(struct xtrxll_base_pcie_dma* dev)
 	res = dev->base.selfops->reg_in(dev->base.self,
 									UL_GP_ADDR + GP_PORT_RD_RXIQ_PERIOD,
 									&period);
-	XTRXLL_LOG(XTRXLL_ERROR, "XTRX P: %08x %08x <-> %08x\n", miss, odd, period);
+	XTRXLLS_LOG("BPCI", XTRXLL_ERROR, "XTRX P: %08x %08x <-> %08x\n", miss, odd, period);
 	return res;
 #else
 	return 0;
@@ -99,8 +99,8 @@ int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 		bufno_rd = (bufstat >> RXDMA_BUFNO_READ) & 0x3f;
 		unsigned blk_rem  = (bufstat >> RXDMA_BLK_REM) & 0xfff;
 
-		XTRXLL_LOG((bufstat & (1U << RXDMA_OVF)) ? XTRXLL_ERROR : ((force_log) ? XTRXLL_INFO : XTRXLL_DEBUG),
-				   "XTRX %s: RX DMA STAT %c%c %08d Bytes %c%c%d%d %02d/%02d I:%d\n",
+		XTRXLLS_LOG("BPCI", (bufstat & (1U << RXDMA_OVF)) ? XTRXLL_ERROR : ((force_log) ? XTRXLL_INFO : XTRXLL_DEBUG),
+				   "%s: RX DMA STAT %c%c %08d Bytes %c%c%d%d %02d/%02d I:%d\n",
 				   dev->base.id,
 				   (bufstat & (1U << RXDMA_OVF)) ? 'O': '-',
 				   (bufstat & (1 << RXDMA_RE)) ?  'E': '-',
@@ -148,7 +148,7 @@ int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 			// FIXME
 			nxt_high += 256 * dev->rd_block_samples;
 
-			XTRXLL_LOG(XTRXLL_INFO, "XTRX %s: BUF_OVF TS:%" PRIu64
+			XTRXLLS_LOG("BPCI", XTRXLL_INFO, "%s: BUF_OVF TS:%" PRIu64
 					   " WTS:%d WTS_NXT:%d TS_NXT:%" PRIu64 " SKIP %" PRIu64 " buffers INT_S:%u\n",
 					   dev->base.id, dev->rd_cur_sample, ofw_wts, nxt, nxt_high,
 					   (nxt_high - dev->rd_cur_sample) / dev->rd_block_samples,
@@ -162,7 +162,7 @@ int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 
 			/* WR pointer can be only RXDMA_BUFFERS buffers ahead */
 			if (((bufno - bufno_rd) & 0x3f) > RXDMA_BUFFERS) {
-				XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: Incorrect DMA pointers! (bufno=%d bufno_rd=%d rdidx=%d icnt=%d)\n",
+				XTRXLLS_LOG("BPCI", XTRXLL_ERROR, "%s: Incorrect DMA pointers! (bufno=%d bufno_rd=%d rdidx=%d icnt=%d)\n",
 						   dev->base.id, bufno, bufno_rd, dev->rd_buf_idx, icnt);
 				return -EPIPE;
 			}
@@ -174,7 +174,7 @@ int xtrxllpciebase_dmarx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 			return -EAGAIN;
 		}
 	} else {
-		XTRXLL_LOG(XTRXLL_DEBUG, "XTRX %s: RD %d of %d\n",
+		XTRXLLS_LOG("BPCI", XTRXLL_DEBUG, "%s: RD %d of %d\n",
 				   dev->base.id, dev->rd_buf_idx, dev->rx_rdsafe);
 		dev->rx_rdsafe--;
 		bufno_rd = dev->rd_buf_idx;
@@ -230,7 +230,7 @@ int xtrxllpciebase_dmatx_post(struct xtrxll_base_pcie_dma* dev, int chan,
 	if (samples > 4096)
 		return -EINVAL;
 
-	XTRXLL_LOG(XTRXLL_DEBUG, "XTRX %s: TX DMA POST %u TS %" PRIu64 " SAMPLES %u\n",
+	XTRXLLS_LOG("BPCI", XTRXLL_DEBUG, "%s: TX DMA POST %u TS %" PRIu64 " SAMPLES %u\n",
 			   dev->base.id, bufno, wts, samples);
 
 	if (bufno > 0x1f)
@@ -297,8 +297,8 @@ int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 		nwr      = (bufstat >> TXDMA_BUFNO_WR) & 0x3f;
 
 
-		XTRXLL_LOG((bufno == NULL || diag) ? XTRXLL_WARNING : XTRXLL_DEBUG,
-				   "XTRX %s: TX DMA STAT %02d|%02d/%02d/%02d/%02d RESET:%d "
+		XTRXLLS_LOG("BPCI", (bufno == NULL || diag) ? XTRXLL_WARNING : XTRXLL_DEBUG,
+				   "%s: TX DMA STAT %02d|%02d/%02d/%02d/%02d RESET:%d "
 				   "Full:%d TxS:%x  %02d/%02d FE:%d FLY:%x D:%d TS:%d CPL:%08x\n",
 				   dev->base.id, dev->tx_written, nwr, ncleared, ntrans, rdx,
 				   (dma_stat & 0x80) ? 1 : 0,
@@ -334,7 +334,7 @@ int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 		dev->tx_written = (dev->tx_written + 1) & 0x3f;
 		--dev->tx_wrsafe;
 
-		XTRXLL_LOG(XTRXLL_DEBUG, "XTRX %s: TX DMA CACHE  %02d (free:%02d)\n",
+		XTRXLLS_LOG("BPCI", XTRXLL_DEBUG, "%s: TX DMA CACHE  %02d (free:%02d)\n",
 				   dev->base.id, nwr, dev->tx_wrsafe);
 	}
 
@@ -392,7 +392,7 @@ int xtrxllpciebase_repeat_tx(struct xtrxll_base_pcie_dma* dev,
 	if (res)
 		return res;
 
-	XTRXLL_LOG(XTRXLL_INFO,  "XTRX %s: REPEAT TS %s %c - %d =>%08x\n",
+	XTRXLLS_LOG("BPCI", XTRXLL_INFO,  "%s: REPEAT TS %s %c - %d =>%08x\n",
 			   dev->base.id,
 			   (fmt == XTRXLL_FE_STOP)  ? "STOP" :
 			   (fmt == XTRXLL_FE_8BIT)  ? "8 bit" :
@@ -423,7 +423,7 @@ int xtrxllpciebase_repeat_tx_start(struct xtrxll_base_pcie_dma* dev,
 	if (res)
 		return res;
 
-	XTRXLL_LOG(XTRXLL_INFO,  "XTRX %s: REPEAT %s =>%08x\n",
+	XTRXLLS_LOG("BPCI", XTRXLL_INFO,  "%s: REPEAT %s =>%08x\n",
 			   dev->base.id, (start) ? "START" : "STOP", st);
 	return 0;
 }
@@ -513,7 +513,7 @@ int xtrxllpciebase_dma_start(struct xtrxll_base_pcie_dma* dev, int chan,
 		xtrxllpciebase_dmarx_stat(dev);
 	}
 
-	XTRXLL_LOG(XTRXLL_INFO,  "XTRX %s: RX DMA %s %s (BLK:%d TS:%" PRIu64 "); TX DMA %s %s\n", dev->base.id,
+	XTRXLLS_LOG("BPCI", XTRXLL_INFO,  "%s: RX DMA %s %s (BLK:%d TS:%" PRIu64 "); TX DMA %s %s\n", dev->base.id,
 			   (rxfe == XTRXLL_FE_DONTTOUCH) ? "SKIP" :
 			   (rxfe == XTRXLL_FE_STOP)  ? "STOP" :
 			   (rxfe == XTRXLL_FE_8BIT)  ? "8 bit" :

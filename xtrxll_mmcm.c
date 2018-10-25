@@ -144,14 +144,17 @@ static int xtrxll_mmcm_trn(struct xtrxll_dev* dev, unsigned drpport, uint8_t reg
 		//if (rdy) {
 			//res = internal_get_txmmcm(dev, out, NULL, &rdy);
 			if (out) {
-				XTRXLL_LOG(XTRXLL_DEBUG, "MMCM RD reg %02x => %04x\n", reg, *out);
+				XTRXLLS_LOG("MMCM", XTRXLL_DEBUG, "%s: RD reg %02x => %04x\n",
+							xtrxll_get_name(dev), reg, *out);
 			} else {
-				XTRXLL_LOG(XTRXLL_DEBUG, "MMCM WR reg %02x <= %04x\n", reg, in);
+				XTRXLLS_LOG("MMCM", XTRXLL_DEBUG, "%s: WR reg %02x <= %04x\n",
+							xtrxll_get_name(dev), reg, in);
 			}
 			return res;
 		//}
 	}
-	XTRXLL_LOG(XTRXLL_WARNING, "MMCM: reg %02x timed out!\n", reg);
+	XTRXLLS_LOG("MMCM", XTRXLL_WARNING, "%s: reg %02x timed out!\n",
+				xtrxll_get_name(dev), reg);
 	return -EFAULT;
 }
 
@@ -189,8 +192,8 @@ static int xtrxll_mmcm_config_clkout(struct xtrxll_dev* dev, unsigned drpport,
 		return res;
 
 
-	XTRXLL_LOG(XTRXLL_DEBUG, "CLKREG %02x OLD: PHASE=%d HIGH=%d LOW=%d | MX=%d EDGE=%d NO_CNT=%d DELAY=%d\n",
-			   clk1_reg_num,
+	XTRXLLS_LOG("MMCM", XTRXLL_DEBUG, "%s: CLKREG %02x OLD: PHASE=%d HIGH=%d LOW=%d | MX=%d EDGE=%d NO_CNT=%d DELAY=%d\n",
+			   xtrxll_get_name(dev), clk1_reg_num,
 			   (clk1_reg_old >> 13) & 0x7, (clk1_reg_old >> 6) & 0x3f, clk1_reg_old & 0x3f,
 			   (clk2_reg_old >> 8) & 0x3, (clk2_reg_old >> 7) & 1, (clk2_reg_old >> 6) & 1,
 			   (clk2_reg_old & 0x3f));
@@ -311,14 +314,16 @@ int xtrxll_mmcm_set_config(struct xtrxll_dev* dev, const mmcm_config_t* cfg)
 		return -EINVAL;
 	if (cfg->clkfb.div == 0 || cfg->clkfb.div > MMCM_DIV_MAX ||
 			cfg->clkfb.pahse >= MMCM_DELAY_MAX * 8) {
-		XTRXLL_LOG(XTRXLL_ERROR, "MMCM: ClkFb incorrect settings\n");
+		XTRXLLS_LOG("MMCM", XTRXLL_ERROR, "%s: ClkFb incorrect settings\n",
+					xtrxll_get_name(dev));
 		return -EINVAL;
 	}
 
 	// Power
 	res = xtrxll_mmcm_trn(dev, cfg->mmcm_port, PowerReg, 0xffff, NULL);
 	if (res) {
-		XTRXLL_LOG(XTRXLL_ERROR, "MMCM: unable to turn it on\n");
+		XTRXLLS_LOG("MMCM", XTRXLL_ERROR, "%s: unable to turn it on\n",
+					xtrxll_get_name(dev));
 		return res;
 	}
 
@@ -335,7 +340,8 @@ int xtrxll_mmcm_set_config(struct xtrxll_dev* dev, const mmcm_config_t* cfg)
 	for (unsigned i = 0; i < CLKOUT_COUNT; i++) {
 		if (cfg->clkout[i].div == 0 || cfg->clkout[i].div > MMCM_DIV_MAX ||
 				cfg->clkout[i].pahse >= MMCM_DELAY_MAX * 8) {
-			XTRXLL_LOG(XTRXLL_ERROR, "MMCM: ClkOut%u incorrect settings\n", i);
+			XTRXLLS_LOG("MMCM", XTRXLL_ERROR, "%s: ClkOut%u incorrect settings\n",
+						xtrxll_get_name(dev), i);
 			return -EINVAL;
 		}
 
@@ -405,8 +411,8 @@ int xtrxll_mmcm_fphase_corr(struct xtrxll_dev* dev, bool tx, unsigned gphase, bo
 		return res;
 
 
-	XTRXLL_LOG(XTRXLL_WARNING, "PHASE_CORR CLKREG %02x OLD: PHASE=%d HIGH=%d LOW=%d | MX=%d EDGE=%d NO_CNT=%d DELAY=%d\n",
-			   clk1_reg_num,
+	XTRXLLS_LOG("MMCM", XTRXLL_WARNING, "%s: PHASE_CORR CLKREG %02x OLD: PHASE=%d HIGH=%d LOW=%d | MX=%d EDGE=%d NO_CNT=%d DELAY=%d\n",
+			   xtrxll_get_name(dev), clk1_reg_num,
 			   (clk1_reg_old >> 13) & 0x7, (clk1_reg_old >> 6) & 0x3f, clk1_reg_old & 0x3f,
 			   (clk2_reg_old >> 8) & 0x3, (clk2_reg_old >> 7) & 1, (clk2_reg_old >> 6) & 1,
 			   (clk2_reg_old & 0x3f));
@@ -465,8 +471,8 @@ int xtrxll_mmcm_setfreq(struct xtrxll_dev* dev, bool tx, int mclk,
 		}
 
 		if (div * mclk < MMCM_VCO_MIN) {
-			XTRXLL_LOG(XTRXLL_WARNING, "MMCM: div * mclk==%d < MMCM_VCO_MIN==%d (mmcm_max_div=%d)\n",
-					   div * mclk, MMCM_VCO_MIN, mmcm_max_div);
+			XTRXLLS_LOG("MMCM", XTRXLL_WARNING, "%s: div * mclk==%d < MMCM_VCO_MIN==%d (mmcm_max_div=%d)\n",
+					   xtrxll_get_name(dev), div * mclk, MMCM_VCO_MIN, mmcm_max_div);
 		}
 	}
 
@@ -478,8 +484,8 @@ int xtrxll_mmcm_setfreq(struct xtrxll_dev* dev, bool tx, int mclk,
 
 	usleep(1000);
 
-	XTRXLL_LOG(XTRXLL_WARNING, "MMCM: DIV=%d/%d MMCM_FREQ=%.3f MHZ MCLK=%.3f MHZ TX=%d X2=%d div=%d/%d\n",
-			   div, ndiv, div * mclk / 1.0e6, mclk / 1.0e6, tx, xn, div, mmcm_max_div);
+	XTRXLLS_LOG("MMCM", XTRXLL_WARNING, "%s: DIV=%d/%d MMCM_FREQ=%.3f MHZ MCLK=%.3f MHZ TX=%d X2=%d div=%d/%d\n",
+			   xtrxll_get_name(dev), div, ndiv, div * mclk / 1.0e6, mclk / 1.0e6, tx, xn, div, mmcm_max_div);
 	//--div;
 	mmcm_config_t config;
 	config.mmcm_port = mmcm_port;
@@ -503,7 +509,8 @@ int xtrxll_mmcm_setfreq(struct xtrxll_dev* dev, bool tx, int mclk,
 
 	res = xtrxll_mmcm_set_config(dev, &config);
 	if (res) {
-		XTRXLL_LOG(XTRXLL_ERROR, "MMCM: xtrxll_mmcm_set_config failed: res %d\n", res);
+		XTRXLLS_LOG("MMCM", XTRXLL_ERROR, "%s: xtrxll_mmcm_set_config failed: res %d\n",
+					xtrxll_get_name(dev), res);
 		return res;
 	}
 
@@ -523,7 +530,8 @@ int xtrxll_mmcm_setfreq(struct xtrxll_dev* dev, bool tx, int mclk,
 			return res;
 
 		if (in_stp || fb_stp) {
-			XTRXLL_LOG(XTRXLL_WARNING, "MMCM failed: FB_loss:%d IN_loss:%d\n", fb_stp, in_stp);
+			XTRXLLS_LOG("MMCM", XTRXLL_WARNING, "%s failed: FB_loss:%d IN_loss:%d\n",
+						xtrxll_get_name(dev), fb_stp, in_stp);
 
 			//Need to reset MMCM in case of clock loss
 			res = internal_set_txmmcm(dev, mmcm_port, 0, 0,
@@ -545,9 +553,9 @@ int xtrxll_mmcm_setfreq(struct xtrxll_dev* dev, bool tx, int mclk,
 		}
 	}
 
-	XTRXLL_LOG(XTRXLL_ERROR, "MMCM: timed out waiting for lock: FB=%d IN=%d;"
+	XTRXLLS_LOG("MMCM", XTRXLL_ERROR, "%s: timed out waiting for lock: FB=%d IN=%d;"
 			   " DIV=%d MMCM_FREQ=%.3f MHZ MCLK=%.3f MHZ TX=%d X2=%d\n",
-			   fb_stp, in_stp,
+			   xtrxll_get_name(dev), fb_stp, in_stp,
 			   div, div * mclk / 1.0e6, mclk / 1.0e6, tx, xn);
 	return -EFAULT;
 }
