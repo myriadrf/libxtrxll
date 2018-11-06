@@ -182,19 +182,19 @@ static int xtrxllpciev0_lms7_spi_bulk(struct xtrxll_base_dev* bdev,
 			if (icnt < 0) {
 				int err = errno;
 				if (err != EAGAIN) {
-					XTRXLL_LOG(XTRXLL_ERROR, "XTRX %s: SPI IRQ error %d (%d)\n",
+					XTRXLLS_LOG("PCIE", XTRXLL_ERROR, "%s: SPI IRQ error %d (%d)\n",
 							   dev->base.id, err, XTRX_KERN_MMAP_CTRL_IRQS);
 					return -err;
 				}
 			}
 
-			XTRXLL_LOG(XTRXLL_DEBUG, "XTRX %s: SPI[%d/%d] I:%d\n",
+			XTRXLLS_LOG("PCIE", XTRXLL_DEBUG, "%s: SPI[%d/%d] I:%d\n",
 					   dev->base.id, i, (unsigned)count, (int)icnt);
 		} while (icnt != 1);
 
 		in[i] = internal_xtrxll_transact_spi_rb(dev);
 
-		XTRXLL_LOG(XTRXLL_DEBUG, "XTRX %s: SPI[%d/%d] %08x => %08x\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_DEBUG, "%s: SPI[%d/%d] %08x => %08x\n",
 				   dev->base.id, i, (unsigned)count, out[i], in[i]);
 	}
 	return 0;
@@ -208,8 +208,18 @@ static int xtrxllpciev0_i2c_cmd(struct xtrxll_base_dev* bdev,
 	internal_xtrxll_reg_out(dev, UL_GP_ADDR + GP_PORT_WR_TMP102, cmd);
 
 	if (out) {
-		// TODO: Get rid of this sleep!
-		usleep(1000);
+		ssize_t icnt;
+		do {
+			icnt = pread(dev->fd, NULL, 0, XTRX_KERN_MMAP_I2C_IRQS);
+			if (icnt < 0) {
+				int err = errno;
+				if (err != EAGAIN) {
+					XTRXLLS_LOG("PCIE", XTRXLL_ERROR, "%s: I2C IRQ error %d (%d)\n",
+							   dev->base.id, err, XTRX_KERN_MMAP_I2C_IRQS);
+					return -err;
+				}
+			}
+		} while (icnt != 1);
 
 		*out = internal_xtrxll_reg_in(dev, UL_GP_ADDR + GP_PORT_RD_TMP102);
 	}
