@@ -29,7 +29,7 @@ int main(int argc, char** argv)
 {
 	struct xtrxll_dev *odev;
 	int opt;
-	const char* device = "/dev/xtrx0";
+	const char* device = NULL;
 	const char* read_filename = NULL;
 	unsigned read_flash_off = 0;
 	unsigned read_file_size = 2048*1024;
