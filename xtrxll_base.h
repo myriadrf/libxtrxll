@@ -32,11 +32,14 @@ typedef const struct xtrxll_ops* (*xtrxll_init_func_t)(unsigned abi_version);
 
 #define XTRXLL_ABI_VERSION 0x1000001
 
+#define GET_HWID_COMPAT(x) ((x >> 8) & 0xff)
 /**
  * @brief The xtrxll_base_dev struct
  *
  * Basic structure that every xtrxll object starts with
  */
+#define XTRXLL_INTDATA_STORAGE_ROOM 7
+
 struct xtrxll_base_dev {
 	const struct xtrxll_ops* selfops;
 	const struct xtrxll_ctrl_ops* ctrlops;
@@ -45,13 +48,12 @@ struct xtrxll_base_dev {
 	const char* id;
 
 	uint32_t hwid;
-	uint32_t internal_state[7]; ///< internal state (DO NOT TOUCH)
+	uint32_t internal_state[XTRXLL_INTDATA_STORAGE_ROOM]; ///< internal state (DO NOT TOUCH)
 };
 
 int xtrxll_base_dev_init(struct xtrxll_base_dev* dev,
 						  const struct xtrxll_ops *ops,
 						  const char* id);
-
 
 struct xtrxll_ops {
 	int (*open)(const char* device, unsigned flags, struct xtrxll_base_dev** dev);
@@ -93,9 +95,7 @@ struct xtrxll_ops {
 					   wts_long_t wts, uint32_t samples);
 
 	int (*dma_start)(struct xtrxll_base_dev* dev, int chan,
-					 xtrxll_fe_t rxfe, xtrxll_mode_t rxmode,
-					 wts_long_t rx_start_sample,
-					 xtrxll_fe_t txfe, xtrxll_mode_t txmode);
+					 const struct xtrxll_dmaop* op);
 
 	int (*repeat_tx_buf)(struct xtrxll_base_dev* dev, int chan, xtrxll_fe_t fmt,
 						 const void* buff, unsigned buf_szs, xtrxll_mode_t mode);
@@ -104,19 +104,8 @@ struct xtrxll_ops {
 
 	// Sensor wrapper with wait functions
 	int (*get_sensor)(struct xtrxll_base_dev* dev, unsigned sensorno, int* outval);
-	int (*set_param)(struct xtrxll_base_dev* dev, unsigned paramno, unsigned inval);
+	int (*set_param)(struct xtrxll_base_dev* dev, unsigned paramno, uintptr_t inval);
 };
-
-
-/* XTRX DMA configuration */
-#define RXDMA_BUFFERS      32
-#define TXDMA_BUFFERS      RXDMA_BUFFERS
-
-#define RXDMA_MMAP_BUFF    32768
-#define RXDMA_MMAP_SIZE    (RXDMA_BUFFERS * RXDMA_MMAP_BUFF)
-
-#define TXDMA_MMAP_BUFF    RXDMA_MMAP_BUFF
-#define TXDMA_MMAP_SIZE    (TXDMA_BUFFERS * TXDMA_MMAP_BUFF)
 
 /**
  * @brief wts32_t Wrappable timestamp number for TX/RX smaples
@@ -162,7 +151,7 @@ struct xtrxll_ctrl_ops {
 	int (*mem_wr32)(struct xtrxll_base_dev* dev, uint32_t xtrx_addr,
 					unsigned mwords, const uint32_t* host_addr);
 
-	int (*set_param)(struct xtrxll_base_dev* dev, unsigned paramno, unsigned inval);
+	int (*set_param)(struct xtrxll_base_dev* dev, unsigned paramno, uintptr_t inval);
 };
 
 #endif //XTRXLL_BASE_H

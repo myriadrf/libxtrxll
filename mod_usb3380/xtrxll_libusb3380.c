@@ -30,7 +30,6 @@
 #include <libusb3380.h>
 
 #include "xtrxll_log.h"
-#include "xtrxll_base.h"
 #include "xtrxll_base_pcie.h"
 #include "xtrxll_libusb3380.h"
 
@@ -40,11 +39,11 @@
 
 #define ASYNC_MODE
 
-#define BUFFERS_RX_MUL 8
+#define BUFFERS_RX_MUL 2
 
 enum {
-	DMA_REGION_TX_ADDR = 0x20000000,  // 256Mb
-	DMA_REGION_RX_ADDR = 0x10000000,  // 256Mb
+	DMA_REGION_TX_ADDR = 0x40000000,  // 512Mb
+	DMA_REGION_RX_ADDR = 0x20000000,  // 512Mb
 };
 
 enum msinterrupts {
@@ -99,9 +98,15 @@ struct xtrxll_usb3380_dev
 	// Input queue
 	uint8_t* rx_queuebuf_ptr; // cache aligned pointer to rx_queuebuf
 	uint8_t* tx_queuebuf_ptr; // cache aligned pointer to tx_queuebuf
+	uint8_t* rx_discard_rxbuffer;
 
-	uint8_t queuebuf[BUFFERS_RX_MUL*2*RXDMA_MMAP_SIZE + TXDMA_MMAP_SIZE + EXTRA_DATA_ALIGMENT];
-	uint8_t discard_rxbuffer[2*RXDMA_MMAP_BUFF + 64];
+	//unsigned rx_bufsz;
+	//unsigned tx_bufsz;
+	unsigned rx_allocsz;
+	unsigned tx_allocsz;
+
+	//uint8_t queuebuf[BUFFERS_RX_MUL*2*RXDMA_MMAP_SIZE + TXDMA_MMAP_SIZE + EXTRA_DATA_ALIGMENT];
+	//uint8_t discard_rxbuffer[2*RXDMA_MMAP_BUFF + 64];
 
 	// RX part
 	uint32_t rx_buf_max;
@@ -501,7 +506,7 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 	cfg.bar2.flags = 0;
 	// USB IN <- PCIe RX
 	cfg.bar3.addr = DMA_REGION_RX_ADDR;
-	cfg.bar3.length = BAR_2M;
+	cfg.bar3.length = BAR_512M;
 	for (unsigned i = 0; i < 4; i++) {
 		cfg.bar3.qadrants_ep_map[i] = (i >= 2 && dual_ep) ? LIBUSB3380_GPEP2 : LIBUSB3380_GPEP0;
 		cfg.bar3.gpep_in_type[i] = true;
@@ -574,8 +579,12 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 				   dev->base.id);
 		goto failed_mutex_ctrl;
 	}
-	dev->rx_queuebuf_ptr = (uint8_t*)((uintptr_t)(dev->queuebuf + EXTRA_DATA_ALIGMENT - 1) & ~((uintptr_t)(EXTRA_DATA_ALIGMENT - 1)));
-	dev->tx_queuebuf_ptr = dev->rx_queuebuf_ptr + BUFFERS_RX_MUL*2*RXDMA_MMAP_SIZE;
+	dev->rx_queuebuf_ptr = NULL;// (uint8_t*)((uintptr_t)(dev->queuebuf + EXTRA_DATA_ALIGMENT - 1) & ~((uintptr_t)(EXTRA_DATA_ALIGMENT - 1)));
+	dev->tx_queuebuf_ptr = NULL; //dev->rx_queuebuf_ptr + BUFFERS_RX_MUL*2*RXDMA_MMAP_SIZE;
+	dev->rx_discard_rxbuffer = NULL;
+
+	dev->rx_allocsz = 0;
+	dev->tx_allocsz = 0;
 
 	dev->rx_running = false;
 	dev->rx_stop = false;
@@ -667,8 +676,7 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 		goto failed_pcie_cfg;
 	}
 
-	res = xtrxllpciebase_dma_start(&dev->pcie, 0, XTRXLL_FE_STOP, XTRXLL_FE_MODE_MIMO,
-									0, XTRXLL_FE_STOP, XTRXLL_FE_MODE_MIMO);
+	res = xtrxllpciebase_dma_start(&dev->pcie, 0, NULL);
 	if (res) {
 		goto failed_pcie_cfg;
 	}
@@ -730,6 +738,8 @@ static void xtrxllusb3380v0_close(struct xtrxll_base_dev* bdev)
 	for (unsigned i = 0; i < MSINT_COUNT; i++) {
 		sem_destroy(&dev->interrupts[i]);
 	}
+	free(dev->rx_queuebuf_ptr);
+	free(dev->tx_queuebuf_ptr);
 	free(dev);
 }
 
@@ -807,28 +817,42 @@ static int xtrxllusb3380v0_dma_rx_init(struct xtrxll_base_dev* bdev, int chan,
 	if (chan != 0)
 		return -EINVAL;
 
-	// Virtual USB3380 PCIe DMA memory
-	if (buf_szs % 16 || buf_szs > 2 * RXDMA_MMAP_BUFF) {
-		XTRXLLS_LOG("USB3", XTRXLL_ERROR, "Wire RX pkt size is %d, should be rounded to 128 bit and less %d\n",
-				   buf_szs, 2*RXDMA_MMAP_BUFF);
-		return -EINVAL;
-	} else if (buf_szs == 0) {
-		buf_szs = 2 * RXDMA_MMAP_BUFF;
+	int allocsz = xtrxllpciebase_dmarx_bufsz(&dev->pcie, buf_szs);
+	if (allocsz < 0)
+		return allocsz;
+
+	if (dev->rx_allocsz < allocsz) {
+		free(dev->rx_queuebuf_ptr);
+		dev->rx_allocsz = allocsz;
+		dev->rx_queuebuf_ptr = (uint8_t*)aligned_alloc(4096, allocsz * (dev->rx_buf_max + 1));
+		if (dev->rx_queuebuf_ptr == 0)
+			return -ENOMEM;
+
+		dev->rx_discard_rxbuffer = dev->rx_queuebuf_ptr + dev->rx_buf_max * dev->rx_allocsz;
+	}
+	if (buf_szs == 0) {
+		buf_szs = allocsz;
 	}
 
 	for (i = 0; i < RXDMA_BUFFERS; i++) {
-		int num = (i % 2) ? RXDMA_BUFFERS / 2 + i / 2 : i / 2;
+		uint32_t off = DMA_REGION_RX_ADDR + ((i % 2) ? 256 * 1024 * 1024 : 0);
 		uint32_t reg = (((buf_szs / 16) - 1) & 0xFFF) |
-				(0xFFFFF000 & (DMA_REGION_RX_ADDR + num * 2 * RXDMA_MMAP_BUFF));
+				(0xFFFFF000 & (off + (i / 2) * dev->rx_allocsz));
 
 		res = pcieusb3380v0_reg_out(dev, UL_RXDMA_ADDR + i, reg);
 		if (res)
 			return res;
 	}
 
-	dev->pcie.cfg_rx_desired_bufsize = buf_szs;
-	dev->pcie.cfg_rx_bufsize = buf_szs & ~15U;
+	if ((GET_HWID_COMPAT(dev->base.hwid) == 1)) {
+		uint32_t pktsz = (unsigned)((buf_szs / 16) - 1) | (1U << 31);
 
+		res = pcieusb3380v0_reg_out(dev, UL_RXDMA_ADDR + 32, pktsz);
+		if (res)
+			return res;
+	}
+
+	dev->pcie.cfg_rx_bufsize = buf_szs;
 	*out_szs = dev->pcie.cfg_rx_bufsize;
 	return 0;
 }
@@ -945,8 +969,8 @@ static int xtrxllusb3380v0_dma_rx_gpep_issue(struct xtrxll_usb3380_dev* dev,
 		assert(dev->pcie.cfg_rx_bufsize > dev->rx_gpep_buffer_off[i]);
 
 		if (ep_mask & (1U << i)) {
-			buffer = (dev->rx_discard) ? dev->discard_rxbuffer :
-										 dev->rx_queuebuf_ptr + ((dev->pcie.rd_buf_idx + i) & (dev->rx_buf_max-1)) * 2 * RXDMA_MMAP_BUFF;
+			buffer = (dev->rx_discard) ? dev->rx_discard_rxbuffer :
+										 dev->rx_queuebuf_ptr + ((dev->pcie.rd_buf_idx + i) & (dev->rx_buf_max-1)) * dev->rx_allocsz;
 			dev->rx_gpep_active[i] = true;
 			res = usb3380_async_gpep_in_post(dev->mgr,
 											 gpep_map[i],
@@ -1023,7 +1047,7 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 			res = xtrxllpciebase_dmarx_get(&dev->pcie, chan, &bn, &cwts, sz,
 										   (dev->rx_dma_flow_ctrl) ? PCIEDMARX_NO_CNTR_UPD : PCIEDMARX_NO_CNTR_CHECK, 0);
 			if (res == 0) {
-				XTRXLLS_LOG("USB3", XTRXLL_WARNING, "%s: RX DATA BUT NOT BUF\n", dev->base.id);
+				XTRXLLS_LOG("USB3", XTRXLL_DEBUG, "%s: RX DATA BUT NOT BUF\n", dev->base.id);
 				continue;
 			} else if (res == -EOVERFLOW) {
 				XTRXLLS_LOG("USB3", XTRXLL_WARNING, "%s: RX OVERFLOW\n", dev->base.id);
@@ -1057,7 +1081,7 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 	unsigned bufno = (dev->rx_bufno_consumed++) & (dev->rx_buf_max - 1);
 
 	*sz = dev->pcie.cfg_rx_bufsize;
-	*addr = dev->rx_queuebuf_ptr + bufno * 2 * RXDMA_MMAP_BUFF;
+	*addr = dev->rx_queuebuf_ptr + bufno * dev->rx_allocsz;
 
 	if (wts) {
 		*wts = dev->pcie.rd_cur_sample;
@@ -1077,11 +1101,13 @@ static int xtrxllusb3380v0_dma_rx_release(struct xtrxll_base_dev* bdev,
 	struct xtrxll_usb3380_dev* dev = (struct xtrxll_usb3380_dev*)bdev;
 	int res = 0;
 
-	if (chan != 0)
+	if (chan != 0 || dev->pcie.cfg_rx_bufsize == 0 || dev->rx_allocsz == 0)
 		return -EINVAL;
 
-	unsigned bufno = ((uint8_t*)addr - dev->rx_queuebuf_ptr) / (2 * RXDMA_MMAP_BUFF);
-	assert(bufno < dev->rx_buf_max);
+	unsigned bufno = ((uint8_t*)addr - dev->rx_queuebuf_ptr) / dev->rx_allocsz;
+	unsigned bufoff = ((uint8_t*)addr - dev->rx_queuebuf_ptr) % dev->rx_allocsz;
+	if (bufno >= dev->rx_buf_max || bufoff)
+		return -EINVAL;
 
 	unsigned buffs_available =  __atomic_add_fetch(&dev->rx_buf_available, 1, __ATOMIC_SEQ_CST);
 	if (buffs_available == 1 && !dev->rx_stop) {
@@ -1106,11 +1132,22 @@ static int xtrxllusb3380v0_dma_tx_init(struct xtrxll_base_dev* bdev, int chan,
 	if (chan != 0)
 		return -EINVAL;
 
+	unsigned allocsz = xtrxllpciebase_dmatx_bufsz(&dev->pcie, buf_szs);
+	if (allocsz < 0)
+		return allocsz;
+
+	if (dev->tx_allocsz < allocsz) {
+		free(dev->tx_queuebuf_ptr);
+		dev->tx_allocsz = allocsz;
+		dev->tx_queuebuf_ptr = aligned_alloc(4096, allocsz * TXDMA_BUFFERS);
+		if (dev->tx_queuebuf_ptr == 0)
+			return -ENOMEM;
+	}
+
 	int res;
 	unsigned i;
 	for (i = 0; i < TXDMA_BUFFERS; i++) {
-        int num = (dev->tx_ep_count == 1) ? i :
-                (i % 2) ? TXDMA_BUFFERS / 2 + i / 2 : i / 2;
+		int num = (i % 2) ? TXDMA_BUFFERS / 2 + i / 2 : i / 2;
 
 		uint32_t reg = (((buf_szs / 16) - 1) & 0xFFF) |
 				(0xFFFFF000 & (DMA_REGION_TX_ADDR + /*i*/ num * TXDMA_MMAP_BUFF));
@@ -1193,7 +1230,7 @@ static int xtrxllusb3380v0_dma_tx_getfree_ex(struct xtrxll_base_dev* bdev,
 		return -EINVAL;
 
 	if (addr == NULL) {
-		res = xtrxllpciebase_dmatx_get(&dev->pcie, chan, NULL, &ilate, false);
+		res = xtrxllpciebase_dmatx_get(&dev->pcie, chan, NULL, &ilate, true);
 		if (late) {
 			*late = ilate;
 		}
@@ -1254,7 +1291,7 @@ static int xtrxllusb3380v0_dma_tx_getfree_ex(struct xtrxll_base_dev* bdev,
 			if (res == -EBUSY) {
 				XTRXLLS_LOG("USB3", XTRXLL_WARNING,  "%s: TX BUSY\n", dev->base.id);
 
-				xtrxllpciebase_dmatx_get(&dev->pcie, chan, NULL, &ilate, false);
+				xtrxllpciebase_dmatx_get(&dev->pcie, chan, NULL, &ilate, true);
 			} else if (res == 0) {
 				assert(bufno == (dev->tx_bufno_posted & 0x1f));
 				dev->tx_bufno_posted++;
@@ -1368,21 +1405,21 @@ static void xtrxllusb3380v0_flush_dma_tx(struct xtrxll_usb3380_dev* dev)
 }
 
 static int xtrxllusb3380v0_dma_start(struct xtrxll_base_dev* bdev, int chan,
-									 xtrxll_fe_t rxfe, xtrxll_mode_t rxmode,
-									 wts_long_t rx_start_sample,
-									 xtrxll_fe_t txfe, xtrxll_mode_t txmode)
+									 const struct xtrxll_dmaop* op)
 {
 	struct xtrxll_usb3380_dev* dev = (struct xtrxll_usb3380_dev*)bdev;
-	dev->tx_chans = (txmode == XTRXLL_FE_MODE_MIMO) ? 2 : 1;
+	dev->tx_chans = (op) ? ((op->txmode == XTRXLL_FE_MODE_MIMO) ? 2 : 1) : 2;
 
 	int res;
+	xtrxll_fe_t rxfe = (op) ? op->rxfe : XTRXLL_FE_STOP;
+	xtrxll_fe_t txfe = (op) ? op->txfe : XTRXLL_FE_STOP;
 
 	if (rxfe == XTRXLL_FE_STOP) {
 		dev->rx_stop = true;
 		xtrxllpciebase_dmarx_stat(&dev->pcie);
 
 		res = pcieusb3380v0_reg_out(dev, UL_GP_ADDR + GP_PORT_WR_RXTXDMA,
-									(1UL << GP_PORT_WR_RXTXDMA_RXV) | (rxfe << GP_PORT_WR_RXTXDMA_RXOFF));
+									(1UL << GP_PORT_WR_RXTXDMA_RXV) | ((unsigned)rxfe << GP_PORT_WR_RXTXDMA_RXOFF));
 
 		while (dev->rx_gpep_active[0] || dev->rx_gpep_active[1]) {
 			usleep(1000);
@@ -1397,7 +1434,7 @@ static int xtrxllusb3380v0_dma_start(struct xtrxll_base_dev* bdev, int chan,
 
 	if (txfe == XTRXLL_FE_STOP) {
 		dev->tx_stop = true;
-		xtrxllpciebase_dmatx_get(&dev->pcie, 0, NULL, NULL, false);
+		//xtrxllpciebase_dmatx_get(&dev->pcie, 0, NULL, NULL, false);
 	} else if (txfe != XTRXLL_FE_DONTTOUCH) {
 		dev->tx_stop = false;
 		//dev->tx_buf_available = TXDMA_BUFFERS;
@@ -1409,8 +1446,7 @@ static int xtrxllusb3380v0_dma_start(struct xtrxll_base_dev* bdev, int chan,
 	}
 
 
-	res = xtrxllpciebase_dma_start(&dev->pcie, chan, rxfe, rxmode,
-									rx_start_sample, txfe, txmode);
+	res = xtrxllpciebase_dma_start(&dev->pcie, chan, op);
 	if (rxfe == XTRXLL_FE_STOP) {
 		while (dev->rx_gpep_active[0] || dev->rx_gpep_active[1]) {
 			struct timespec ts;
@@ -1465,7 +1501,7 @@ static int xtrxllusb3380v0_get_sensor(struct xtrxll_base_dev* bdev,
 }
 
 static int xtrxllusb3380v0_set_param(struct xtrxll_base_dev* dev,
-									  unsigned paramno, unsigned val)
+									  unsigned paramno, uintptr_t val)
 {
 	return dev->ctrlops->set_param(dev->self, paramno, val);
 }

@@ -105,6 +105,14 @@ enum xtrxll_sensors {
 	XTRXLL_REFCLK_CLK,
 	XTRXLL_DAC_REG,
 
+	XTRXLL_GTIME_SECFRAC,
+	XTRXLL_GTIME_OFF,
+
+	XTRXLL_GPIO_IN,
+
+	XTRXLL_TX_TIME,
+	XTRXLL_RX_TIME,
+
 	XTRXLL_PMIC0_VER,
 	XTRXLL_PMIC0_ID,
 	XTRXLL_PMIC0_CTRL1,
@@ -121,6 +129,11 @@ enum xtrxll_sensors {
 
 	XTRXLL_HWID,
 
+	XTRXLL_XTRX_VIO,
+	XTRXLL_XTRX_VGPIO,
+	XTRXLL_FE_CTRL,
+	XTRXLL_EXT_CLK,
+
 	XTRXLL_CFG_NUM_RFIC,
 	XTRXLL_CFG_HAS_GPS,
 	XTRXLL_CFG_HAS_SIM_READER,
@@ -135,10 +148,42 @@ enum param_pwr_ctrl {
 	PWR_CTRL_ON = 2,
 };
 
+enum xtrxll_ppsdo_ctrl {
+	XTRXLL_PPSDO_DISABLE = 0,
+	XTRXLL_PPSDO_INT_GPS = 1,
+	XTRXLL_PPSDO_EXT_PPS = 2,
+};
+
+enum xtrxll_gtime_ctrl {
+	XTRXLL_GTIME_DISABLE   = 0,
+	XTRXLL_GTIME_INT_ISO   = 1,
+	XTRXLL_GTIME_EXT_PPS   = 2,
+	XTRXLL_GTIME_EXT_PPSFW = 3,
+};
+
+enum xtrxll_giso_ctrl {
+	XTRXLL_GISO_DISABLE = 0,
+	XTRXLL_GISO_PPSFW = 1,
+};
+
+/**
+ * @brief The xtrxll_clksel enum
+ *
+ * Values for @ref XTRXLL_PARAM_EXT_CLK
+ */
+enum xtrxll_clksel {
+	XTRXLL_CLK_INT = 0,
+	XTRXLL_CLK_INT_PD = 1,
+	XTRXLL_CLK_EXT_NOPD = 2,
+	XTRXLL_CLK_EXT = 3,
+	XTRXLL_CLK_MASK = 3,
+};
+
 typedef enum xtrxll_params {
 	XTRXLL_PARAM_CLOCK_TYPE,
 	XTRXLL_PARAM_PWR_MODE,
 	XTRXLL_PARAM_PWR_VIO,
+	XTRXLL_PARAM_PWR_VGPIO,
 	XTRXLL_PARAM_RX_DLY,
 	XTRXLL_PARAM_REF_DAC,
 	XTRXLL_PARAM_SWITCH_RX_ANT,
@@ -147,10 +192,52 @@ typedef enum xtrxll_params {
 	XTRXLL_PARAM_FE_CTRL,
 	XTRXLL_PARAM_EXT_CLK,
 	XTRXLL_PARAM_DSPFE_CMD,
+
+	XTRXLL_PARAM_GPIO_FUNC,
+	XTRXLL_PARAM_GPIO_DIR,
+	XTRXLL_PARAM_GPIO_OUT,
+	XTRXLL_PARAM_GPIO_CS,
+
+	XTRXLL_PARAM_PPSDO_CTRL,
+	XTRXLL_PARAM_GTIME_CTRL,
+	XTRXLL_PARAM_ISOPPS_CTRL,
+
+	XTRXLL_PARAM_GTIME_SETCMP,
+	XTRXLL_PARAM_GTIME_TRIMOFF,
+	XTRXLL_PARAM_ISOPPS_SETTIME,
+
+	XTRXLL_PARAM_GTIME_RESET,
+	XTRXLL_PARAM_GTIME_LOAD_CMD,
+	XTRXLL_PARAM_GTIME_LOAD_TIME,
 } xtrxll_params_t;
 
+
+typedef enum xtrxll_gtime_cmd_type {
+	XTRXLL_GCMDT_RFIC_CMD,
+	XTRXLL_GCMDT_TRX_CMD,
+	XTRXLL_GCMDT_GPIO_SET,
+	XTRXLL_GCMDT_GPIO_CS,
+
+	// Get rid of
+	XTRXLL_GCMDT_RXCMDT_CMD,
+	XTRXLL_GCMDT_RXCMDD_CMD,
+} xtrxll_gtime_cmd_type_t;
+
+struct xtrxll_gtime_cmd {
+	xtrxll_gtime_cmd_type_t type;
+	unsigned cmd_idx;
+	uint32_t param;
+};
+
+struct xtrxll_gtime_time {
+	unsigned d_idx;
+	unsigned d_cnt;
+	uint32_t sec;
+	uint32_t frac;
+};
+
 XTRXLL_API int xtrxll_set_param(struct xtrxll_dev* dev, unsigned paramno,
-								unsigned value);
+								uintptr_t value);
 
 // Frone end treaming format
 typedef enum xtrxll_fe {
@@ -231,24 +318,55 @@ typedef enum xtrxll_mode {
 
 } xtrxll_mode_t;
 
+struct xtrxll_dmaop {
+	xtrxll_fe_t rxfe;
+	xtrxll_mode_t rxmode;
+
+	xtrxll_fe_t txfe;
+	xtrxll_mode_t txmode;
+
+	wts_long_t rx_start_sample;
+
+	uint32_t gtime_sec;
+	uint32_t gtime_frac;
+
+	unsigned gidx;
+};
+
 XTRXLL_API int xtrxll_dma_start(struct xtrxll_dev* dev, int chan,
-								xtrxll_fe_t rxfe, xtrxll_mode_t rxmode,
-								wts_long_t rx_start_sample,
-								xtrxll_fe_t txfe, xtrxll_mode_t txmode);
+								const struct xtrxll_dmaop* op);
 
 static inline int xtrxll_dma_rx_start(struct xtrxll_dev* dev, int chan,
 									  xtrxll_fe_t fe)
 {
-	return xtrxll_dma_start(dev, chan, fe, XTRXLL_FE_MODE_MIMO, 0,
-							XTRXLL_FE_DONTTOUCH, XTRXLL_FE_MODE_MIMO);
+	struct xtrxll_dmaop op;
+	op.rxfe = fe;
+	op.rxmode = XTRXLL_FE_MODE_MIMO;
+	op.txfe = XTRXLL_FE_DONTTOUCH;
+	op.txmode = XTRXLL_FE_MODE_MIMO;
+	op.rx_start_sample = 0;
+
+	op.gtime_sec = 0;
+	op.gtime_frac = 0;
+
+	return xtrxll_dma_start(dev, chan, &op);
 }
 
 
 static inline int xtrxll_dma_tx_start(struct xtrxll_dev* dev, int chan,
 									  xtrxll_fe_t fe, xtrxll_mode_t mode)
 {
-	return xtrxll_dma_start(dev, chan, XTRXLL_FE_DONTTOUCH,
-							XTRXLL_FE_MODE_MIMO, 0, fe, mode);
+	struct xtrxll_dmaop op;
+	op.rxfe = XTRXLL_FE_DONTTOUCH;
+	op.rxmode = XTRXLL_FE_MODE_MIMO;
+	op.txfe = fe;
+	op.txmode = mode;
+	op.rx_start_sample = 0;
+
+	op.gtime_sec = 0;
+	op.gtime_frac = 0;
+
+	return xtrxll_dma_start(dev, chan, &op);
 }
 
 

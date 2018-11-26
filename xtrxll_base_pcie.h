@@ -54,7 +54,6 @@ struct xtrxll_base_pcie_dma {
 	struct xtrxll_base_dev base;
 
 	unsigned cfg_rx_bufsize;
-	unsigned cfg_rx_desired_bufsize;
 	unsigned tx_prev_burst_samples;
 
 	//RX states
@@ -87,6 +86,20 @@ enum pciebase_dmarx_flags {
 	PCIEDMARX_NO_CNTR_CHECK = 4,
 };
 
+
+/* XTRX DMA configuration */
+#define RXDMA_BUFFERS      32
+#define TXDMA_BUFFERS      RXDMA_BUFFERS
+
+#define TXDMA_MMAP_BUFF    32768
+#define TXDMA_MMAP_SIZE    (TXDMA_BUFFERS * TXDMA_MMAP_BUFF)
+
+
+int xtrxllpciebase_dmarx_bufsz(struct xtrxll_base_pcie_dma* dev,
+								unsigned min_bytes);
+int xtrxllpciebase_dmatx_bufsz(struct xtrxll_base_pcie_dma* dev,
+							   unsigned min_bytes);
+
 int xtrxllpciebase_init(struct xtrxll_base_pcie_dma* dev);
 
 int xtrxllpciebase_dmarx_resume(struct xtrxll_base_pcie_dma* dev, int chan,
@@ -110,9 +123,7 @@ int xtrxllpciebase_repeat_tx_start(struct xtrxll_base_pcie_dma* dev,
 								   int chan, int start);
 
 int xtrxllpciebase_dma_start(struct xtrxll_base_pcie_dma* dev, int chan,
-							 xtrxll_fe_t rxfe, xtrxll_mode_t rxmode,
-							 wts_long_t rx_start_sample,
-							 xtrxll_fe_t txfe, xtrxll_mode_t txmode);
+							 const struct xtrxll_dmaop *op);
 
 int xtrxllpciebase_dmarx_stat(struct xtrxll_base_pcie_dma* dev);
 

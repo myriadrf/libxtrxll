@@ -69,6 +69,11 @@ struct xtrxll_pcie_dev
 
 	volatile uint32_t* mmap_xtrxll_regs;
 
+	unsigned rx_bufsz;
+	unsigned tx_bufsz;
+	unsigned rx_allocsz;
+	unsigned tx_allocsz;
+
 	void* mmap_tx_kernel_buf;
 	void* mmap_rx_kernel_buf;
 
@@ -326,6 +331,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 		goto failed_malloc;
 	}
 
+	memset(dev, 0, sizeof(struct xtrxll_pcie_dev));
 	dev->fd = fd;
 	snprintf(dev->pcie_devname, DEV_NAME_SIZE - 1, "PCI:%s", ldev);
 	dev->mmap_xtrxll_regs = (volatile uint32_t* )mem;
@@ -344,20 +350,12 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 				   dev->base.id);
 		goto failed_abi_ctrl;
 	}
-	err = xtrxllpciebase_dma_start(&dev->pcie, 0, XTRXLL_FE_STOP, XTRXLL_FE_MODE_MIMO,
-									0, XTRXLL_FE_STOP, XTRXLL_FE_MODE_MIMO);
+	err = xtrxllpciebase_dma_start(&dev->pcie, 0, NULL);
 	if (err) {
 		goto failed_abi_ctrl;
 	}
 
 	*pdev = &dev->base;
-
-	internal_xtrxll_reg_out(dev, UL_GP_ADDR + GP_PORT_WR_INT_PCIE,
-							//(1U << INT_PCIE_E_FLAG) |
-							//(0U << 16) | /* 128 B max_size */
-							//(4U << 17) | /* 2048 B max_req_size */
-							(1 << INT_PCIE_I_FLAG) | ( 0xfff ));
-
 	XTRXLLS_LOG("PCIE", XTRXLL_INFO,  "%s: Device `%s` was opened\n",
 			   dev->base.id, device);
 	return 0;
@@ -394,34 +392,57 @@ static int xtrxllpciev0_dma_rx_init(struct xtrxll_base_dev* bdev, int chan,
 	int err;
 	if (chan !=0)
 		return -EINVAL;
-	if (buf_szs % 16 || buf_szs > RXDMA_MMAP_BUFF) {
-		XTRXLLS_LOG("PCIE", XTRXLL_ERROR, "Wire RX pkt size is %d, should be rounded to 128 bit and less %d\n",
-				   buf_szs, RXDMA_MMAP_BUFF);
-		return -EINVAL;
-	} else if (buf_szs == 0) {
-		buf_szs = RXDMA_MMAP_BUFF;
+
+	int allocsz = xtrxllpciebase_dmarx_bufsz(&dev->pcie, buf_szs);
+	if (allocsz < 0)
+		return allocsz;
+	if (buf_szs == 0) {
+		buf_szs = allocsz;
 	}
 
-	if (dev->mmap_rx_kernel_buf == 0) {
-		void* m = mmap(0, RXDMA_MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED,
-					   dev->fd, XTRX_MMAP_RX_OFF);
+	if (dev->rx_allocsz < (unsigned)allocsz) {
+		if (dev->mmap_rx_kernel_buf != 0) {
+			munmap(dev->mmap_rx_kernel_buf, dev->rx_allocsz);
+		}
+
+		err = ioctl(dev->fd, 0x12345A, allocsz);
+		if (err < 0) {
+			XTRXLLS_LOG("PCIE", XTRXLL_ERROR,  "%s: Unable to allocate desired DMA buffer size %d\n",
+					   dev->base.id, buf_szs);
+			return -EFAULT;
+		}
+		if (err < allocsz) {
+			XTRXLLS_LOG("PCIE", XTRXLL_ERROR,  "%s: Broken XTRX driver\n", dev->base.id);
+			return -EFAULT;
+		}
+		allocsz = err;
+
+		void* m = mmap(0, (unsigned)allocsz * RXDMA_BUFFERS,
+					   PROT_READ | PROT_WRITE, MAP_SHARED,
+					   dev->fd,
+					   XTRX_MMAP_RX_OFF);
 		if (m == MAP_FAILED) {
 			err = errno;
-			XTRXLLS_LOG("PCIE", XTRXLL_ERROR,  "%s: DMA RX mmap*() failed: %s\n",
-					   dev->base.id, strerror_safe(err));
+			XTRXLLS_LOG("PCIE", XTRXLL_ERROR,  "%s: DMA RX mmap*() failed: %s, allocsz: %d\n",
+					   dev->base.id, strerror_safe(err), allocsz);
 			goto failed;
 		}
-		XTRXLLS_LOG("PCIE", XTRXLL_DEBUG,  "%s: DMA RX mmaped to %p\n", dev->base.id, m);
+
+		XTRXLLS_LOG("PCIE", XTRXLL_DEBUG,  "%s: DMA RX mmaped to %p [bufsz: %d]\n",
+					dev->base.id, m, allocsz);
 		dev->mmap_rx_kernel_buf = m;
+
+		dev->rx_allocsz = allocsz;
 	}
-	err = ioctl(dev->fd, 0x123459, buf_szs / 16);
+
+	err = ioctl(dev->fd, 0x123459, buf_szs);
 	if (err) {
-		XTRXLLS_LOG("PCIE", XTRXLL_ERROR,  "%s: Unable to set desired buffer size %d\n",
+		XTRXLLS_LOG("PCIE", XTRXLL_ERROR,  "%s: Unable to set desired DMA packet size %d\n",
 				   dev->base.id, buf_szs);
 		return -EFAULT;
 	}
-	dev->pcie.cfg_rx_desired_bufsize = buf_szs;
-	dev->pcie.cfg_rx_bufsize = buf_szs & ~15U;
+	dev->pcie.cfg_rx_bufsize = buf_szs;
+	dev->rx_bufsz            = buf_szs;
 
 	*out_szs = dev->pcie.cfg_rx_bufsize;
 	return 0;
@@ -436,7 +457,10 @@ static int xtrxllpciev0_dma_rx_deinit(struct xtrxll_base_dev* bdev, int chan)
 	int err;
 	if (chan !=0)
 		return -EINVAL;
-	err = munmap(dev->mmap_rx_kernel_buf, RXDMA_MMAP_SIZE);
+	if (dev->rx_allocsz == 0)
+		return 0;
+
+	err = munmap(dev->mmap_rx_kernel_buf, dev->rx_allocsz);
 	if (err) {
 		err = errno;
 		XTRXLLS_LOG("PCIE", XTRXLL_DEBUG,  "%s: DMA RX unmmap error: %s\n",
@@ -523,7 +547,7 @@ static int xtrxllpciev0_dma_rx_getnext(struct xtrxll_base_dev* bdev, int chan,
 		}
 	}
 
-	*addr = (void*)((char*)dev->mmap_rx_kernel_buf + RXDMA_MMAP_BUFF * bn);
+	*addr = (void*)((char*)dev->mmap_rx_kernel_buf + dev->rx_allocsz * bn);
 	return 0;
 }
 
@@ -533,8 +557,10 @@ static int xtrxllpciev0_dma_rx_release(struct xtrxll_base_dev* bdev, int chan,
 	struct xtrxll_pcie_dev* dev = (struct xtrxll_pcie_dev*)bdev;
 	if (chan != 0)
 		return -EINVAL;
+	if (!dev->rx_allocsz)
+		return -EFAULT;
 
-	unsigned bufno = ((char*)addr - (char*)dev->mmap_rx_kernel_buf) / RXDMA_MMAP_BUFF;
+	unsigned bufno = ((char*)addr - (char*)dev->mmap_rx_kernel_buf) / dev->rx_allocsz;
 	XTRXLLS_LOG("PCIE", XTRXLL_DEBUG,  "%s: RX DMA RELEASE %d\n", dev->base.id, bufno);
 
 	if (bufno > 0x1f)
@@ -694,13 +720,10 @@ static int xtrxllpciev0_repeat_tx_start(struct xtrxll_base_dev* bdev,
 }
 
 static int xtrxllpciev0_dma_start(struct xtrxll_base_dev* bdev, int chan,
-								  xtrxll_fe_t rxfe, xtrxll_mode_t rxmode,
-								  wts_long_t rx_start_sample,
-								  xtrxll_fe_t txfe, xtrxll_mode_t txmode)
+								  const struct xtrxll_dmaop* op)
 {
 	struct xtrxll_pcie_dev* dev = (struct xtrxll_pcie_dev*)bdev;
-	return xtrxllpciebase_dma_start(&dev->pcie, chan, rxfe, rxmode,
-									rx_start_sample, txfe, txmode);
+	return xtrxllpciebase_dma_start(&dev->pcie, chan, op);
 }
 
 static int xtrxllpciev0_reg_out(struct xtrxll_base_dev* bdev, unsigned reg,
@@ -752,10 +775,24 @@ static int xtrxllpciev0_get_sensor(struct xtrxll_base_dev* bdev,
 	return bdev->ctrlops->get_sensor(bdev->self, sensorno, outval);
 }
 
-static int xtrxllpciev0_set_param(struct xtrxll_base_dev* dev,
-									unsigned paramno, unsigned val)
+static int xtrxllpciev0_set_param(struct xtrxll_base_dev* bdev,
+									unsigned paramno, uintptr_t val)
 {
-	return dev->ctrlops->set_param(dev->self, paramno, val);
+	struct xtrxll_pcie_dev* dev = (struct xtrxll_pcie_dev*)bdev;
+	if (paramno == XTRXLL_PARAM_PWR_CTRL) {
+		// We need to make sure our driver state is in sync, so
+		// do not toggle v33 state manually
+		int en_b33 = (val != PWR_CTRL_PDOWN) ? 1 : 0;
+		int res = ioctl(dev->fd, 0x12345B, en_b33);
+
+		// Do not disable 3v3 line if GPS is active ouside
+		if (val == PWR_CTRL_PDOWN && res == 0) {
+			val = PWR_CTRL_BUSONLY;
+		}
+		// Fall into default handler
+		// TODO: add more flags not to touch PWR line
+	}
+	return bdev->ctrlops->set_param(bdev->self, paramno, val);
 }
 
 static const char* get_proto_id(void) {

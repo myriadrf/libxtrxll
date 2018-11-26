@@ -33,7 +33,7 @@
 
 int xtrxllpciebase_init(struct xtrxll_base_pcie_dma* dev)
 {
-	dev->cfg_rx_bufsize = RXDMA_MMAP_BUFF;
+	dev->cfg_rx_bufsize = 0;
 	dev->tx_prev_burst_samples = 0;
 
 	dev->rx_rdsafe = 0;
@@ -299,7 +299,7 @@ int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 
 		XTRXLLS_LOG("BPCI", (bufno == NULL || diag) ? XTRXLL_WARNING : XTRXLL_DEBUG,
 				   "%s: TX DMA STAT %02d|%02d/%02d/%02d/%02d RESET:%d "
-				   "Full:%d TxS:%x  %02d/%02d FE:%d FLY:%x D:%d TS:%d CPL:%08x\n",
+				   "Full:%d TxS:%x  %02d/%02d FE:%d FLY:%x D:%d TS:%d CPL:%08x  [%08x]\n",
 				   dev->base.id, dev->tx_written, nwr, ncleared, ntrans, rdx,
 				   (dma_stat & 0x80) ? 1 : 0,
 				   ((dma_stat >> 3) & 0xf),
@@ -309,7 +309,7 @@ int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 				   (statm >> 12) & 0x3,
 				   (statm >> 14) & 0x3,
 				   (statm >> 16),
-				   ts, cpls);
+				   ts, cpls, bufstat);
 
 		if (((nwr - ncleared) & 0x3f) > TXDMA_BUFFERS) {
 			abort();
@@ -329,6 +329,7 @@ int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 		if (late) {
 			dev->tx_late_bursts = (statm >> 16);
 		}
+		dev->tx_wrsafe = 0;
 	} else {
 		nwr = dev->tx_written;
 		dev->tx_written = (dev->tx_written + 1) & 0x3f;
@@ -445,13 +446,17 @@ static unsigned get_max_samples_in_buffer(xtrxll_fe_t fe, xtrxll_mode_t mode,
 }
 
 int xtrxllpciebase_dma_start(struct xtrxll_base_pcie_dma* dev, int chan,
-							 xtrxll_fe_t rxfe, xtrxll_mode_t rxmode,
-							 wts_long_t rx_start_sample,
-							 xtrxll_fe_t txfe, xtrxll_mode_t txmode)
+							 const struct xtrxll_dmaop* op)
 {
 	int res;
 	if (chan != 0)
 		return -EINVAL;
+
+	xtrxll_fe_t rxfe = (op) ? op->rxfe : XTRXLL_FE_STOP;
+	xtrxll_mode_t rxmode = (op) ? op->rxmode : XTRXLL_FE_MODE_MIMO;
+	xtrxll_fe_t txfe = (op) ? op->txfe : XTRXLL_FE_STOP;
+	xtrxll_mode_t txmode = (op) ? op->txmode : XTRXLL_FE_MODE_MIMO;
+	wts_long_t rx_start_sample = (op) ? op->rx_start_sample : 0;
 
 	if (rxfe != XTRXLL_FE_DONTTOUCH && (rxfe & ~3))
 		return -EINVAL;
@@ -513,31 +518,99 @@ int xtrxllpciebase_dma_start(struct xtrxll_base_pcie_dma* dev, int chan,
 		xtrxllpciebase_dmarx_stat(dev);
 	}
 
-	XTRXLLS_LOG("BPCI", XTRXLL_INFO,  "%s: RX DMA %s %s (BLK:%d TS:%" PRIu64 "); TX DMA %s %s\n", dev->base.id,
-			   (rxfe == XTRXLL_FE_DONTTOUCH) ? "SKIP" :
-			   (rxfe == XTRXLL_FE_STOP)  ? "STOP" :
-			   (rxfe == XTRXLL_FE_8BIT)  ? "8 bit" :
-			   (rxfe == XTRXLL_FE_12BIT) ? "12 bit" :
-			   (rxfe == XTRXLL_FE_16BIT) ? "16 bit" : "<unkn>",
-			   ((rxmode & XTRXLL_FE_MODE_SISO)   ? "SISO" : "MIMO"),
-			   dev->rd_block_samples, rx_start_sample,
-			   (txfe == XTRXLL_FE_DONTTOUCH) ? "SKIP" :
-			   (txfe == XTRXLL_FE_STOP)  ? "STOP" :
-			   (txfe == XTRXLL_FE_8BIT)  ? "8 bit" :
-			   (txfe == XTRXLL_FE_12BIT) ? "12 bit" :
-			   (txfe == XTRXLL_FE_16BIT) ? "16 bit" : "<unkn>",
-			   ((txmode & XTRXLL_FE_MODE_SISO)   ? "SISO" : "MIMO"));
+	XTRXLLS_LOG("BPCI", XTRXLL_INFO,  "%s: RX DMA %s %s (BLK:%d TS:%" PRIu64 "); TX DMA %s %s @%d.%d\n", dev->base.id,
+				(rxfe == XTRXLL_FE_DONTTOUCH) ? "SKIP" :
+				(rxfe == XTRXLL_FE_STOP)  ? "STOP" :
+				(rxfe == XTRXLL_FE_8BIT)  ? "8 bit" :
+				(rxfe == XTRXLL_FE_12BIT) ? "12 bit" :
+				(rxfe == XTRXLL_FE_16BIT) ? "16 bit" : "<unkn>",
+				((rxmode & XTRXLL_FE_MODE_SISO)   ? "SISO" : "MIMO"),
+				dev->rd_block_samples, rx_start_sample,
+				(txfe == XTRXLL_FE_DONTTOUCH) ? "SKIP" :
+				(txfe == XTRXLL_FE_STOP)  ? "STOP" :
+				(txfe == XTRXLL_FE_8BIT)  ? "8 bit" :
+				(txfe == XTRXLL_FE_12BIT) ? "12 bit" :
+				(txfe == XTRXLL_FE_16BIT) ? "16 bit" : "<unkn>",
+				((txmode & XTRXLL_FE_MODE_SISO)   ? "SISO" : "MIMO"),
+				(op) ? op->gtime_sec : 0,
+				(op) ? op->gtime_frac : 0);
 
-	res = dev->base.selfops->reg_out(dev->base.self, UL_GP_ADDR + GP_PORT_WR_RXTXDMA, reg);
-	if (res)
+	if (!op || (op->gtime_sec == 0 && op->gtime_frac == 0)) {
+		res = dev->base.selfops->reg_out(dev->base.self, UL_GP_ADDR + GP_PORT_WR_RXTXDMA, reg);
+		if (res)
+			return res;
+
+		if (rxfe != XTRXLL_FE_DONTTOUCH && rxfe != XTRXLL_FE_STOP && rx_start_sample) {
+			res = xtrxllpciebase_dmarx_resume(dev, chan, rx_start_sample);
+		}
+	} else {
+		if (txfe != XTRXLL_FE_DONTTOUCH) {
+			res = dev->base.selfops->reg_out(dev->base.self, UL_GP_ADDR + GP_PORT_WR_RXTXDMA,
+											 (1UL << GP_PORT_WR_RXTXDMA_TXV) | (1UL << GP_PORT_TXDMA_CTRL_RESET_BUFS));
+			if (res)
+				return res;
+		}
+
+		struct xtrxll_gtime_cmd cmd;
+		struct xtrxll_gtime_time gtime;
+		cmd.type = XTRXLL_GCMDT_TRX_CMD;
+		cmd.cmd_idx = op->gidx;
+		cmd.param = reg;
+
+		gtime.d_idx = op->gidx;
+		gtime.d_cnt = 1;
+		gtime.sec = op->gtime_sec;
+		gtime.frac = op->gtime_frac;
+
+		res = dev->base.selfops->set_param(dev->base.self,
+										   XTRXLL_PARAM_GTIME_LOAD_CMD,
+										   (uintptr_t)&cmd);
+		if (res)
+			return res;
+
+		res = dev->base.selfops->set_param(dev->base.self,
+										   XTRXLL_PARAM_GTIME_LOAD_TIME,
+										   (uintptr_t)&gtime);
+
+
+		if (rxfe != XTRXLL_FE_DONTTOUCH && rxfe != XTRXLL_FE_STOP && rx_start_sample) {
+			// FIXME it's not desired to use
+			cmd.type = XTRXLL_GCMDT_RXCMDD_CMD;
+			cmd.cmd_idx++;
+			cmd.param = 0;
+
+			res = dev->base.selfops->set_param(dev->base.self,
+											   XTRXLL_PARAM_GTIME_LOAD_CMD,
+											   (uintptr_t)&cmd);
+			if (res)
+				return res;
+
+			cmd.type = XTRXLL_GCMDT_RXCMDT_CMD;
+			cmd.cmd_idx++;
+			cmd.param = rx_start_sample;
+
+			res = dev->base.selfops->set_param(dev->base.self,
+											   XTRXLL_PARAM_GTIME_LOAD_CMD,
+											   (uintptr_t)&cmd);
+			if (res)
+				return res;
+
+			gtime.d_idx = op->gidx + 1;
+			gtime.d_cnt = 2;
+			gtime.frac += 100;
+
+
+			res = dev->base.selfops->set_param(dev->base.self,
+											   XTRXLL_PARAM_GTIME_LOAD_TIME,
+											   (uintptr_t)&gtime);
+		}
+	}
+	if (res) {
 		return res;
+	}
 
 	if (rxfe != XTRXLL_FE_STOP) {
 		dev->rx_running = true;
-	}
-
-	if (rxfe != XTRXLL_FE_DONTTOUCH && rxfe != XTRXLL_FE_STOP && rx_start_sample) {
-		xtrxllpciebase_dmarx_resume(dev, chan, rx_start_sample);
 	}
 
 	/* Put RX FE in reset state when we stop transmition. We need to do it
@@ -555,4 +628,60 @@ int xtrxllpciebase_dma_start(struct xtrxll_base_pcie_dma* dev, int chan,
 }
 
 
+enum {
+	BUF_4K = (1U << 12),
+	BUF_32K = (1U << 15),
+	BUF_64K = (1U << 16),
+	BUF_1M = (1U << 20),
+	BUF_4M = (1U << 22),
+	BUF_16M = (1U << 24),
+};
 
+int xtrxllpciebase_dmarx_bufsz(struct xtrxll_base_pcie_dma* dev,
+							   unsigned min_bytes)
+{
+	enum {
+		XTRX_DMA_RX_V0_MAX = BUF_64K,
+		XTRX_DMA_RX_V1_MAX = BUF_4M,
+		// TODO Fix bug for 16Mb buffers on USB
+		//XTRX_DMA_RX_V1_MAX = BUF_16M,
+	};
+
+	unsigned max = (GET_HWID_COMPAT(dev->base.hwid) < 1) ? XTRX_DMA_RX_V0_MAX :
+														   XTRX_DMA_RX_V1_MAX;
+	if (min_bytes == 0)
+		return XTRX_DMA_RX_V0_MAX;
+	if (min_bytes % 16)
+		goto error;
+
+	for (unsigned i = BUF_4K; i <= max; i <<= 1) {
+		if (min_bytes <= i) {
+			return i;
+		}
+	}
+
+error:
+	XTRXLLS_LOG("BPCI", XTRXLL_ERROR, "Wire RX pkt size is %d, should be rounded to 128 bit and less %d\n",
+			   min_bytes, max);
+	return -EINVAL;
+}
+
+int xtrxllpciebase_dmatx_bufsz(struct xtrxll_base_pcie_dma* dev,
+							   unsigned min_bytes)
+{
+	if (min_bytes == 0)
+		return BUF_32K;
+	if (min_bytes % 16)
+		goto error;
+
+	for (unsigned i = BUF_4K; i <= BUF_64K; i <<= 1) {
+		if (min_bytes <= i) {
+			return i;
+		}
+	}
+
+error:
+	XTRXLLS_LOG("BPCI", XTRXLL_ERROR, "Wire TX pkt size is %d, should be rounded to 128 bit and less %d\n",
+			   min_bytes, BUF_64K);
+	return -EINVAL;
+}

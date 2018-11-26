@@ -287,7 +287,7 @@ int xtrxll_get_sensor(struct xtrxll_dev* dev, unsigned sensorno, int* outval)
 	return bdev->selfops->get_sensor(bdev->self, sensorno, outval);
 }
 
-int xtrxll_set_param(struct xtrxll_dev* dev, unsigned paramno, unsigned value)
+int xtrxll_set_param(struct xtrxll_dev* dev, unsigned paramno, uintptr_t value)
 {
 	struct xtrxll_base_dev* bdev = (struct xtrxll_base_dev*)dev;
 	return bdev->selfops->set_param(bdev->self, paramno, value);
@@ -356,13 +356,10 @@ int xtrxll_dma_tx_post(struct xtrxll_dev* dev, int chan, void* addr,
 }
 
 int xtrxll_dma_start(struct xtrxll_dev* dev, int chan,
-					 xtrxll_fe_t rxfe, xtrxll_mode_t rxmode,
-					 wts_long_t rx_start_sample,
-					 xtrxll_fe_t txfe, xtrxll_mode_t txmode)
+					 const struct xtrxll_dmaop* op)
 {
 	struct xtrxll_base_dev* bdev = (struct xtrxll_base_dev*)dev;
-	return bdev->selfops->dma_start(bdev->self, chan, rxfe, rxmode,
-										 rx_start_sample, txfe, txmode);
+	return bdev->selfops->dma_start(bdev->self, chan, op);
 }
 
 int xtrxll_repeat_tx_buf(struct xtrxll_dev* dev, int chan, xtrxll_fe_t fmt,

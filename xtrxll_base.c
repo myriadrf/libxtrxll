@@ -56,7 +56,17 @@ struct internal_base_state {
 
 	uint8_t rfic_ctrl;
 	uint8_t ext_clk;
+
+	uint8_t gps_state;
+	uint8_t gtime_state;
+	uint8_t isopps_state;
+
+	uint16_t vio;
+	uint16_t v33;
 };
+
+_Static_assert( sizeof(struct internal_base_state) <= XTRXLL_INTDATA_STORAGE_ROOM * sizeof(uint32_t), "Not enough space for internal data!");
+
 
 #define GET_FWID(hwid) ((hwid)>>24)
 
@@ -161,7 +171,7 @@ enum {
 
 enum xtrx_power_out {
 	V_LMS_1V8 = 1800,
-	V_XTRX_XO = 3000 + 20,
+	V_XTRX_XO = 3200,
 	V_LMS_1V4 = 1400,
 	V_LMS_1V2 = 1260,
 };
@@ -195,9 +205,30 @@ static int _xtrxllr3_io_set(struct xtrxll_base_dev* dev, unsigned vio_mv)
 	if (res)
 		return res;
 
+	struct internal_base_state* intr = (struct internal_base_state*)dev->internal_state;
+	intr->vio = vio_mv;
 	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: FPGA V_IO set to %04dmV\n", dev->id, vio_mv);
 	return 0;
 }
+
+static int _xtrxllr3_gpio_set(struct xtrxll_base_dev* dev, unsigned vgpio_mv)
+{
+	if (vgpio_mv < 500)
+		return -EINVAL;
+
+	if (vgpio_mv > 3360)
+		vgpio_mv = 3360;
+
+	int res = lp8758_set(dev, XTRX_I2C_PMIC_LMS, BUCK1_VOUT,  get_voltage(vgpio_mv));
+	if (res)
+		return res;
+
+	struct internal_base_state* intr = (struct internal_base_state*)dev->internal_state;
+	intr->v33 = vgpio_mv;
+	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: FPGA V_GPIO set to %04dmV\n", dev->id, vgpio_mv);
+	return 0;
+}
+
 
 static int _xtrxllr3_d12_set(struct xtrxll_base_dev* dev, unsigned vd12_mv)
 {
@@ -228,13 +259,17 @@ static int _xtrxllr3_aux_set(struct xtrxll_base_dev* dev, unsigned vaux_mv)
 static int _xtrxllr3_pmic_lms_set(struct xtrxll_base_dev* dev, unsigned extra_drop)
 {
 	int res;
+	res = _xtrxllr3_gpio_set(dev, V_XTRX_XO + extra_drop);
+	if (res)
+		return res;
 
 	res = lp8758_set(dev, XTRX_I2C_PMIC_LMS, BUCK0_VOUT,  get_voltage(V_LMS_1V8 + extra_drop));
 	if (res)
 		return res;
-	res = lp8758_set(dev, XTRX_I2C_PMIC_LMS, BUCK1_VOUT,  get_voltage(V_XTRX_XO + extra_drop));
+/*	res = lp8758_set(dev, XTRX_I2C_PMIC_LMS, BUCK1_VOUT,  get_voltage(V_XTRX_XO + extra_drop));
 	if (res)
 		return res;
+*/
 	res = lp8758_set(dev, XTRX_I2C_PMIC_LMS, BUCK2_VOUT,  get_voltage(V_LMS_1V4 + extra_drop));
 	if (res)
 		return res;
@@ -242,10 +277,9 @@ static int _xtrxllr3_pmic_lms_set(struct xtrxll_base_dev* dev, unsigned extra_dr
 	if (res)
 		return res;
 
-	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: LMS PMIC DCDC out set to V18=%04dmV V33=%04dmV V14=%04dmV V12=%04dmV\n",
+	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: LMS PMIC DCDC out set to VA18=%04dmV VA14=%04dmV VA12=%04dmV\n",
 				dev->id,
 			   V_LMS_1V8 + extra_drop,
-			   V_XTRX_XO + extra_drop,
 			   V_LMS_1V4 + extra_drop,
 			   V_LMS_1V2 + extra_drop);
 	return 0;
@@ -441,10 +475,16 @@ static int _xtrxr3_board_combctrl(struct xtrxll_base_dev* dev)
 	cmd |= (1<<GP_PORT_XTRX_ENBPVIO_N);
 	cmd |= (1<<GP_PORT_XTRX_ENBP3V3_N);
 
-	if (intr->ext_clk)
+	if (intr->ext_clk == XTRXLL_CLK_EXT)
 		cmd |= (1<<GP_PORT_XTRX_EXT_CLK) | (1<<GP_PORT_XTRX_PD_TCXO);
+	else if(intr->ext_clk == XTRXLL_CLK_EXT_NOPD)
+		cmd |= (1<<GP_PORT_XTRX_EXT_CLK);
+	else if(intr->ext_clk == XTRXLL_CLK_INT_PD)
+		cmd |= (1<<GP_PORT_XTRX_PD_TCXO);
 
 	cmd |= intr->rfic_ctrl;
+	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: RFIC_GPIO 0x%06x\n",
+				dev->id, cmd);
 	return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_LMS_CTRL, cmd);
 }
 
@@ -452,6 +492,7 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 {
 	int res;
 	uint32_t tmp;
+	struct internal_base_state* intr = (struct internal_base_state*)dev->internal_state;
 
 	switch (sensorno) {
 	case XTRXLL_CFG_NUM_RFIC:
@@ -531,6 +572,42 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 			return res;
 		*outval = ((tmp) << 8) >> 16;
 		return 0;
+
+	case XTRXLL_GTIME_SECFRAC:
+		res = dev->selfops->reg_in_n(dev->self, UL_GP_ADDR + GP_PORT_RD_GTIME_SEC,
+									 (uint32_t*)outval, 2);
+		return res;
+
+	case XTRXLL_GTIME_OFF:
+		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_GTIME_OFF,
+								   &tmp);
+		*outval = (int)tmp;
+		return res;
+
+	case XTRXLL_GPIO_IN:
+		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_GPIO_IN,
+								   &tmp);
+		*outval = (int)tmp;
+		return res;
+
+	case XTRXLL_TX_TIME:
+		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_TXDMA_STATTS,
+								   &tmp);
+		*outval = (int)tmp;
+		return res;
+
+	case XTRXLL_RX_TIME:
+		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_RXDMA_STATTS,
+								   &tmp);
+		*outval = (int)tmp;
+		return res;
+
+
+	case XTRXLL_XTRX_VIO: *outval = intr->vio; return 0;
+	case XTRXLL_XTRX_VGPIO: *outval = intr->v33; return 0;
+	case XTRXLL_FE_CTRL: *outval = intr->rfic_ctrl; return 0;
+	case XTRXLL_EXT_CLK: *outval = intr->ext_clk; return 0;
+
 	default:
 		return -EINVAL;
 	}
@@ -731,7 +808,152 @@ static int xtrvxllv0_set_osc_dac(struct xtrxll_base_dev* dev, unsigned val)
 	return ltc2606_set_cur(dev, val);
 }
 
-static int xtrvxllv0_set_param(struct xtrxll_base_dev* dev, unsigned paramno, unsigned param)
+#define TIMECMD_DATA_MASK 0x0fffffff
+#define TIMECMD_OFF       28
+
+localparam PPS_CONFIG      = 0;
+localparam PPS_CMP_COUNTER = 1;
+localparam PPS_OFF         = 2;
+localparam PPS_GEN_TMLOW   = 3;
+localparam PPS_GEN_TMHI    = 4;
+
+
+localparam PPS_CFG_OSC_PPS_EXT   = 0;
+localparam PPS_CFG_OSC_PPS_EDGE  = 1;
+localparam PPS_CFG_TIME_PPS_EXT  = 2;
+localparam PPS_CFG_TIME_PPS_EDGE = 3;
+localparam PPS_CFG_FWPPS         = 4;
+localparam PPS_CFG_ISOG_RESET    = 5;
+localparam PPS_CFG_GLOB_RESET    = 6;
+localparam PPS_CFG_TIME_RESET    = 7;
+
+static int xtrx_update_timecfg(struct xtrxll_base_dev* dev)
+{
+	struct internal_base_state* intr = (struct internal_base_state*)dev->internal_state;
+	uint32_t config = 0;
+
+	if (intr->gps_state == XTRXLL_PPSDO_EXT_PPS)
+		config |= 1 << PPS_CFG_OSC_PPS_EXT;
+
+	if (intr->gtime_state != XTRXLL_GTIME_INT_ISO)
+		config |= 1 << PPS_CFG_TIME_PPS_EXT;
+	if (intr->gtime_state != XTRXLL_GTIME_EXT_PPS) {
+		config |= 1 << PPS_CFG_FWPPS;
+	}
+	if (intr->gtime_state == XTRXLL_GTIME_DISABLE) {
+		config |= 1 << PPS_CFG_GLOB_RESET;
+		config |= 1 << PPS_CFG_TIME_RESET;
+	}
+
+	if (intr->isopps_state == XTRXLL_GISO_DISABLE) {
+		config |= 1 << PPS_CFG_ISOG_RESET;
+	}
+
+	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: TIME CTRL %06x\n", dev->id, config);
+
+	return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_PPS_CMD,
+								 (PPS_CONFIG << TIMECMD_OFF) | (TIMECMD_DATA_MASK & config));
+
+}
+
+static int xtrvxllv0_set_gcmd(struct xtrxll_base_dev* dev,
+							  const struct xtrxll_gtime_cmd* cmd)
+{
+	uint32_t cmd_addr;
+	uint32_t cmd_data;
+
+	if (cmd->cmd_idx > 63)
+		return -EINVAL;
+
+	switch (cmd->type) {
+	case XTRXLL_GCMDT_RFIC_CMD:
+		cmd_addr = GP_PORT_WR_SPI_LMS7_0;
+		cmd_data = cmd->param;
+		break;
+
+	case XTRXLL_GCMDT_TRX_CMD:
+		cmd_addr = GP_PORT_WR_RXTXDMA;
+		cmd_data = cmd->param;
+		break;
+
+	case XTRXLL_GCMDT_RXCMDT_CMD:
+		cmd_addr = GP_PORT_WR_TCMD_T;
+		cmd_data = cmd->param;
+		break;
+
+	case XTRXLL_GCMDT_RXCMDD_CMD:
+		cmd_addr = GP_PORT_WR_TCMD_D;
+		cmd_data = cmd->param;
+		break;
+
+	case XTRXLL_GCMDT_GPIO_SET:
+		cmd_addr = GP_PORT_WR_GPIO_OUT;
+		cmd_data = cmd->param;
+		break;
+
+	case XTRXLL_GCMDT_GPIO_CS:
+		cmd_addr = GP_PORT_WR_GPIO_CS;
+		cmd_data = cmd->param;
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: TIME CMD t:%d %02x: [%04x] <= %08x\n",
+				dev->id, cmd->type, cmd->cmd_idx, cmd_addr, cmd_data);
+
+	uint32_t d[2] = {
+		((1 << 30) | (cmd->cmd_idx << 24) | cmd_addr),
+		cmd_data
+	};
+
+	return dev->selfops->reg_out_n(dev->self, UL_GP_ADDR + GP_PORT_WR_GLOBCMDR0,
+								   d, 2);
+}
+
+localparam TIMEIDX_SEC_W = 14;
+localparam TIMEIDX_TICK_W = 26;
+localparam TIMEIDX_DATA_W = 6;
+localparam TIMEIDX_LEN_W = 2;
+
+static int xtrvxllv0_set_gtime(struct xtrxll_base_dev* dev,
+							   const struct xtrxll_gtime_time* cmd)
+{
+	int res;
+
+	if (cmd->d_idx >= (1U << TIMEIDX_DATA_W))
+		return -EINVAL;
+	if (cmd->d_cnt > 4 || cmd->d_cnt == 0)
+		return -EINVAL;
+
+	if (cmd->frac >= (1U << TIMEIDX_TICK_W))
+		return -EINVAL;
+
+	uint64_t tcmd = ((cmd->d_cnt - 1) << 0) |
+			(cmd->d_idx << TIMEIDX_LEN_W) |
+			(((uint64_t)cmd->frac) << (TIMEIDX_LEN_W + TIMEIDX_DATA_W)) |
+			((uint64_t)(cmd->sec & ((1U << TIMEIDX_SEC_W) - 1)) << (TIMEIDX_LEN_W + TIMEIDX_DATA_W + TIMEIDX_TICK_W));
+
+
+	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: TIME TIDX (%d) %02x: <= %08d.%08d\n",
+				dev->id, cmd->d_cnt, cmd->d_idx, cmd->sec, cmd->frac);
+
+	res = dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_GLOBCMDR0,
+								(2U << 30) | (tcmd >> 32));
+	if (res)
+		return res;
+
+	res = dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_GLOBCMDR1,
+								(uint32_t)tcmd);
+	if (res)
+		return res;
+
+	return 0;
+}
+
+static int xtrvxllv0_set_param(struct xtrxll_base_dev* dev, unsigned paramno,
+							   uintptr_t param)
 {
 	struct internal_base_state* intr = (struct internal_base_state*)dev->internal_state;
 
@@ -742,6 +964,8 @@ static int xtrvxllv0_set_param(struct xtrxll_base_dev* dev, unsigned paramno, un
 		return _xtrxllr3_lms7pwr_set_mode(dev, param);
 	case XTRXLL_PARAM_PWR_VIO:
 		return _xtrxllr3_io_set(dev, param);
+	case XTRXLL_PARAM_PWR_VGPIO:
+		return _xtrxllr3_gpio_set(dev, param);
 	case XTRXLL_PARAM_RX_DLY:
 		return dev->selfops->reg_out(dev->self,
 									 UL_GP_ADDR + GP_PORT_WR_LMS_CTRL,
@@ -757,20 +981,96 @@ static int xtrvxllv0_set_param(struct xtrxll_base_dev* dev, unsigned paramno, un
 	case XTRXLL_PARAM_PWR_CTRL:
 		return _xtrxr3_board_pwr_ctrl(dev, param);
 	case XTRXLL_PARAM_FE_CTRL:
-		if (intr->rfic_ctrl != (uint8_t)param) {
-			intr->rfic_ctrl = (uint8_t)param;
+		//if (intr->rfic_ctrl != (uint8_t)param) {
+			intr->rfic_ctrl = (uint8_t)param & 0xFF;
 			return _xtrxr3_board_combctrl(dev);
-		}
+		//}
 		return 0;
 	case XTRXLL_PARAM_EXT_CLK:
-		if (intr->ext_clk != (uint8_t)param) {
-			intr->ext_clk = (uint8_t)param;
+		//if (intr->ext_clk != (uint8_t)param) {
+			intr->ext_clk = (uint8_t)param & XTRXLL_CLK_MASK;
 			return _xtrxr3_board_combctrl(dev);
-		}
+		//}
 		return 0;
 	case XTRXLL_PARAM_DSPFE_CMD:
 		return dev->selfops->reg_out(dev->self,
 									 UL_GP_ADDR + GP_PORT_WR_FE_CMD, param);
+	case XTRXLL_PARAM_GPIO_FUNC: {
+		if (GET_HWID_COMPAT(dev->hwid) < 1) {
+			XTRXLLS_LOG("CTRL", XTRXLL_ERROR, "%s: FPGA Image doesn't support GPIO commands, update it\n", dev->id);
+			return -ENOTSUP;
+		}
+
+		return dev->selfops->reg_out(dev->self,
+									 UL_GP_ADDR + GP_PORT_WR_GPIO_FUNC, param);
+	}
+	case XTRXLL_PARAM_GPIO_DIR:
+		return dev->selfops->reg_out(dev->self,
+									 UL_GP_ADDR + GP_PORT_WR_GPIO_DIR, param);
+	case XTRXLL_PARAM_GPIO_OUT:
+		return dev->selfops->reg_out(dev->self,
+									 UL_GP_ADDR + GP_PORT_WR_GPIO_OUT, param);
+	case XTRXLL_PARAM_GPIO_CS:
+		return dev->selfops->reg_out(dev->self,
+									 UL_GP_ADDR + GP_PORT_WR_GPIO_CS, param);
+
+	case XTRXLL_PARAM_PPSDO_CTRL:
+		if (param > XTRXLL_PPSDO_EXT_PPS)
+			return -EINVAL;
+		intr->gps_state = param;
+		return xtrx_update_timecfg(dev);
+
+	case XTRXLL_PARAM_GTIME_CTRL:
+		if (param > XTRXLL_GTIME_EXT_PPSFW)
+			return -EINVAL;
+		intr->gtime_state = param;
+		return xtrx_update_timecfg(dev);
+
+	case XTRXLL_PARAM_ISOPPS_CTRL:
+		if (param > XTRXLL_GISO_PPSFW)
+			return -EINVAL;
+		intr->isopps_state = param;
+		return xtrx_update_timecfg(dev);
+
+	case XTRXLL_PARAM_GTIME_SETCMP:
+		return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_PPS_CMD,
+									 (PPS_CMP_COUNTER << TIMECMD_OFF) | (TIMECMD_DATA_MASK & param));
+
+	case XTRXLL_PARAM_GTIME_TRIMOFF:
+		return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_PPS_CMD,
+									 (PPS_OFF << TIMECMD_OFF) | (TIMECMD_DATA_MASK & param));
+
+	case XTRXLL_PARAM_ISOPPS_SETTIME:
+	{
+		int res;
+		res = dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_PPS_CMD,
+									(PPS_GEN_TMLOW << TIMECMD_OFF) | (TIMECMD_DATA_MASK & param));
+		if (res)
+			return res;
+
+		return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_PPS_CMD,
+									(PPS_GEN_TMHI << TIMECMD_OFF) | (param >> TIMECMD_OFF));
+	}
+	case XTRXLL_PARAM_GTIME_RESET:
+	{
+		// Reset is the best way for the check
+		if (GET_HWID_COMPAT(dev->hwid) < 1) {
+			XTRXLLS_LOG("CTRL", XTRXLL_ERROR, "%s: FPGA Image doesn't support GTIME commands, update it\n", dev->id);
+			return -ENOTSUP;
+		}
+		return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_GLOBCMDR0,
+									param ? 1 : 0);
+	}
+	case XTRXLL_PARAM_GTIME_LOAD_CMD:
+	{
+		const struct xtrxll_gtime_cmd *cmd = (const struct xtrxll_gtime_cmd *)param;
+		return xtrvxllv0_set_gcmd(dev, cmd);
+	}
+	case XTRXLL_PARAM_GTIME_LOAD_TIME:
+	{
+		const struct xtrxll_gtime_time *tcmd = (const struct xtrxll_gtime_time *)param;
+		return xtrvxllv0_set_gtime(dev, tcmd);
+	}
 	default:
 		return -EINVAL;
 	}
