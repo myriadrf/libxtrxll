@@ -390,6 +390,41 @@ static void xtrxllusb3380v0_log(libusb3380_loglevel_t level,
 	va_end(ap);
 }
 
+static libusb_device * find_usb_match(libusb_device **usbdev, size_t devices,
+									  int usb_bus, int usb_port, int usb_addr,
+									  unsigned* devid, char* devid_s, size_t devid_s_sz)
+{
+	struct libusb_device_descriptor desc;
+	int res;
+	for (unsigned i = 0; i < devices; i++) {
+		res = libusb_get_device_descriptor(usbdev[i], &desc);
+		if (res)
+			continue;
+
+		if (desc.idProduct != LIBUSB3380_PID || desc.idVendor != LIBUSB3380_VID)
+			continue;
+
+		uint8_t bus = libusb_get_bus_number(usbdev[i]);
+		uint8_t port = libusb_get_port_number(usbdev[i]);
+		uint8_t addr = libusb_get_device_address(usbdev[i]);
+
+		*devid = (unsigned)bus * 1000000 + (unsigned)port * 1000 + addr;
+		snprintf(devid_s, devid_s_sz, "%d/%d/%d", bus, port, addr);
+
+		XTRXLLS_LOG("USB3", XTRXLL_DEBUG, "usb3380: comparing devices %d/%d/%d <> %d/%d/%d\n",
+					usb_bus, usb_port, usb_addr,
+					bus, port, addr);
+
+		if ((usb_addr == -1 && usb_bus == -1 && usb_port == -1) ||
+				(usb_addr == -1 && usb_bus == -1 && usb_port == port) ||
+				(usb_addr == -1 && usb_bus == bus && usb_port == port) ||
+				(usb_bus == bus && usb_port == port && usb_addr == addr)) {
+			return usbdev[i];
+		}
+	}
+	return NULL;
+}
+
 static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 								struct xtrxll_base_dev** pdev)
 {
@@ -404,7 +439,6 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 	int usb_bus = -1;
 	int usb_port = -1;
 	int usb_addr = -1;
-	bool int_polling = true;
 	int usb_speed = 0;
 
 	usb3380_set_logfunc(xtrxllusb3380v0_log, NULL);
@@ -430,62 +464,36 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 	if (libusb_init(&uctx)) {
 		return -EFAULT;
 	}
-
-	struct libusb_device_descriptor desc;
 	libusb_device **usbdev;
-	libusb_device *match = NULL;
 	ssize_t devices = libusb_get_device_list(uctx, &usbdev);
 	if (devices < 0) {
 		libusb_exit(uctx);
 		return -ENODEV;
 	}
-
-	for (int i = 0; i < devices; i++) {
-		res = libusb_get_device_descriptor(usbdev[i], &desc);
-		if (res)
-			continue;
-
-		if (desc.idProduct != LIBUSB3380_PID || desc.idVendor != LIBUSB3380_VID)
-			continue;
-
-		uint8_t bus = libusb_get_bus_number(usbdev[i]);
-		uint8_t port = libusb_get_port_number(usbdev[i]);
-		uint8_t addr = libusb_get_device_address(usbdev[i]);
-
-		devid = (unsigned)bus * 1000000 + (unsigned)port * 1000 + addr;
-		snprintf(devid_s, sizeof(devid_s), "%d/%d/%d", bus, port, addr);
-
-		XTRXLLS_LOG("USB3", XTRXLL_DEBUG, "usb3380: comparing devices %d/%d/%d <> %d/%d/%d\n",
-					usb_bus, usb_port, usb_addr,
-					bus, port, addr);
-
-		if ((usb_addr == -1 && usb_bus == -1 && usb_port == -1) ||
-				(usb_addr == -1 && usb_bus == -1 && usb_port == port) ||
-				(usb_addr == -1 && usb_bus == bus && usb_port == port) ||
-				(usb_bus == bus && usb_port == port && usb_addr == addr)) {
-			match = usbdev[i];
-			int speed = libusb_get_device_speed(usbdev[i]);
-			switch (speed) {
-				case LIBUSB_SPEED_LOW: usb_speed = 1; break;
-				case LIBUSB_SPEED_FULL: usb_speed = 12; break;
-				case LIBUSB_SPEED_HIGH: usb_speed = 480; break;
-				case LIBUSB_SPEED_SUPER: usb_speed = 5000; break;
-			}
-
-			int_polling = (speed < LIBUSB_SPEED_SUPER);
-			break;
-		}
+	libusb_device *match = find_usb_match(usbdev, devices,
+										  usb_bus, usb_port, usb_addr,
+										  &devid, devid_s, sizeof(devid_s));
+	if (match == NULL) {
+		XTRXLLS_LOG("USB3", XTRXLL_DEBUG, "No USB device was found to match %d/%d/%d\n",
+					usb_bus, usb_port, usb_addr);
+		libusb_exit(uctx);
+		return -ENODEV;
 	}
 
-	if (match) {
-		res = usb3380_context_init_ex(&ctx, match, uctx);
-	} else {
-		res = -ENODEV;
+	int speed = libusb_get_device_speed(match);
+	switch (speed) {
+	case LIBUSB_SPEED_LOW: usb_speed = 1; break;
+	case LIBUSB_SPEED_FULL: usb_speed = 12; break;
+	case LIBUSB_SPEED_HIGH: usb_speed = 480; break;
+	case LIBUSB_SPEED_SUPER: usb_speed = 5000; break;
 	}
+	bool int_polling = (speed < LIBUSB_SPEED_SUPER);
+
+	res = usb3380_context_init_ex(&ctx, match, uctx);
 	libusb_free_device_list(usbdev, 1);
-
 	if (res) {
 		XTRXLLS_LOG("USB3", XTRXLL_ERROR, "Unable to allocate USB3380 context: error: %d\n", res);
+		libusb_exit(uctx);
 		return res;
 	}
 
@@ -551,9 +559,28 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 
 			usb3380_context_free(ctx);
 
-			usleep(10000);
+			// Reinitialization takes time, wait 0.5sec
+			usleep(500000);
 
-			res = usb3380_context_init(&ctx);
+			// Repeat reinitialization with the same usb_bus and usb_port,
+			// addr will differ after usb reset
+			if (libusb_init(&uctx)) {
+				return -EFAULT;
+			}
+			devices = libusb_get_device_list(uctx, &usbdev);
+			if (devices < 0) {
+				libusb_exit(uctx);
+				return -ENODEV;
+			}
+			match = find_usb_match(usbdev, devices, usb_bus, usb_port, -1,
+								   &devid, devid_s, sizeof(devid_s));
+			if (match == NULL) {
+				libusb_exit(uctx);
+				return -ENODEV;
+			}
+
+			res = usb3380_context_init_ex(&ctx, match, uctx);
+			libusb_free_device_list(usbdev, 1);
 			if (res) {
 				XTRXLLS_LOG("USB3", XTRXLL_ERROR,
 							"Unable to reinitialize context: error: %d\n", res);
