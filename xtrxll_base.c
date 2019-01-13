@@ -373,14 +373,22 @@ static int lp8758_en(struct xtrxll_base_dev* dev, int en, int en3v3)
 			return res;
 
 		uint8_t v = 0xff, d = 0xff;
-		lp8758_get(dev->self, XTRX_I2C_PMIC_LMS, DEV_REV, (uint8_t*)&v);
-		lp8758_get(dev->self, XTRX_I2C_PMIC_LMS, OTP_REV, (uint8_t*)&d);
+		res = lp8758_get(dev->self, XTRX_I2C_PMIC_LMS, DEV_REV, (uint8_t*)&v);
+		if (res)
+			return res;
+		res = lp8758_get(dev->self, XTRX_I2C_PMIC_LMS, OTP_REV, (uint8_t*)&d);
+		if (res)
+			return res;
 		XTRXLLS_LOG("CTRL", XTRXLL_DEBUG, "%s: PMIC_L ver %02x:%02x  en33=%d\n", dev->id, v, d, en3v3);
 
 		for (unsigned i = 0; i < 50; i++) {
 			v = 0xff, d = 0xff;
-			lp8758_get(dev->self, XTRX_I2C_PMIC_FPGA, DEV_REV, (uint8_t*)&v);
-			lp8758_get(dev->self, XTRX_I2C_PMIC_FPGA, OTP_REV, (uint8_t*)&d);
+			res = lp8758_get(dev->self, XTRX_I2C_PMIC_FPGA, DEV_REV, (uint8_t*)&v);
+			if (res)
+				return res;
+			res = lp8758_get(dev->self, XTRX_I2C_PMIC_FPGA, OTP_REV, (uint8_t*)&d);
+			if (res)
+				return res;
 			XTRXLLS_LOG("CTRL", XTRXLL_DEBUG, "%s: PMIC_F ver %02x:%02x\n", dev->id, v, d);
 			if (v == 0x01 && d == 0xe0)
 				break;
