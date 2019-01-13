@@ -278,6 +278,10 @@ static int xtrxllusb3380_wait_msi(struct xtrxll_usb3380_dev* dev, enum msinterru
 	} else {
 		res = sem_trywait(&dev->interrupts[i]);
 	}
+	if (res) {
+		// sem_* function on error returns -1, get proper error
+		res = -errno;
+	}
 	return res;
 }
 
@@ -300,8 +304,11 @@ static int xtrxllusb3380v0_lms7_spi_bulk(struct xtrxll_base_dev* bdev,
 		}
 
 		res = xtrxllusb3380_wait_msi(dev, MSINT_SPI, TO_SPI);
-		if (res)
+		if (res) {
+			XTRXLLS_LOG("USB3", XTRXLL_ERROR, "%s: SPI MSI wait timed out!\n",
+						dev->base.id);
 			return res;
+		}
 
 		if ((out[i] & (1U<<31)) == 0) {
 			res = internal_xtrxll_transact_spi_rb(dev, &in[i]);
@@ -327,8 +334,12 @@ static int xtrxllusb3380v0_i2c_cmd(struct xtrxll_base_dev* bdev,
 
 	if (out) {
 		res = xtrxllusb3380_wait_msi(dev, MSINT_I2C, TO_I2C);
-		if (res)
+		if (res) {
+			XTRXLLS_LOG("USB3", XTRXLL_ERROR, "%s: I2C MSI wait timed out!\n",
+						dev->base.id);
 			return res;
+		}
+
 		res = pcieusb3380v0_reg_in(dev, UL_GP_ADDR + GP_PORT_RD_TMP102, out);
 	}
 	return res;
@@ -390,81 +401,89 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 	unsigned devid;
 	char devid_s[16];
 
+	int usb_bus = -1;
+	int usb_port = -1;
+	int usb_addr = -1;
+	bool int_polling = true;
+	int usb_speed = 0;
+
 	usb3380_set_logfunc(xtrxllusb3380v0_log, NULL);
 	usb3380_set_loglevel(xtrxll_get_loglevel());
 
-	if (device == NULL || strcmp(device, "usb3380") == 0) {
-		devid = 1;
-		devid_s[0] = '1';
-		devid_s[1] = 0;
-		res = usb3380_context_init(&ctx);
-	} else {
-		if (strncmp(device, "usb3380://", 10)) {
-			return -EINVAL;
-		}
-
-		int usb_bus;
-		int usb_port;
-		int usb_addr;
-
+	if (device) {
 		int cnt = sscanf(device, "usb3380://%d/%d/%d", &usb_bus, &usb_port, &usb_addr);
 		if (cnt < 3) {
 			cnt = sscanf(device, "usb3380://%d/%d", &usb_bus, &usb_port);
 			if (cnt < 2) {
-				XTRXLLS_LOG("USB3", XTRXLL_ERROR, "Can't parse device string!\n");
-				return -EINVAL;
-			}
-			usb_addr = -1;
-		}
-
-		libusb_context *uctx;
-		if (libusb_init(&uctx)) {
-			return -EFAULT;
-		}
-
-		struct libusb_device_descriptor desc;
-		libusb_device **dev;
-		libusb_device *match = NULL;
-		ssize_t devices = libusb_get_device_list(uctx, &dev);
-		if (devices < 0) {
-			libusb_exit(uctx);
-			return -ENODEV;
-		}
-
-		for (int i = 0; i < devices; i++) {
-			res = libusb_get_device_descriptor(dev[i], &desc);
-			if (res)
-				continue;
-
-			if (desc.idProduct != LIBUSB3380_PID || desc.idVendor != LIBUSB3380_VID)
-				continue;
-
-			uint8_t bus = libusb_get_bus_number(dev[i]);
-			uint8_t port = libusb_get_port_number(dev[i]);
-			uint8_t addr = libusb_get_device_address(dev[i]);
-
-			devid = (unsigned)bus * 1000000 + (unsigned)port * 1000 + addr;
-			snprintf(devid_s, sizeof(devid_s), "%d/%d/%d", bus, port, addr);
-
-
-			XTRXLLS_LOG("USB3", XTRXLL_DEBUG, "usb3380: comparing devices %d/%d/%d <> %d/%d/%d\n",
-					   usb_bus, usb_port, usb_addr,
-					   bus, port, addr);
-
-			if ((usb_addr == -1 && usb_bus == bus && usb_port == port) ||
-					(usb_bus == bus && usb_port == port && usb_addr == addr)) {
-				match = dev[i];
-				break;
+				cnt = sscanf(device, "usb3380://%d", &usb_bus);
+				if (cnt < 1) {
+					if (strcmp(device, "usb3380")) {
+						XTRXLLS_LOG("USB3", XTRXLL_ERROR, "Can't parse device string!\n");
+						return -EINVAL;
+					}
+				}
 			}
 		}
-
-		if (match) {
-			res = usb3380_context_init_ex(&ctx, match, uctx);
-		} else {
-			res = -ENODEV;
-		}
-		libusb_free_device_list(dev, 1);
 	}
+
+	libusb_context *uctx;
+	if (libusb_init(&uctx)) {
+		return -EFAULT;
+	}
+
+	struct libusb_device_descriptor desc;
+	libusb_device **usbdev;
+	libusb_device *match = NULL;
+	ssize_t devices = libusb_get_device_list(uctx, &usbdev);
+	if (devices < 0) {
+		libusb_exit(uctx);
+		return -ENODEV;
+	}
+
+	for (int i = 0; i < devices; i++) {
+		res = libusb_get_device_descriptor(usbdev[i], &desc);
+		if (res)
+			continue;
+
+		if (desc.idProduct != LIBUSB3380_PID || desc.idVendor != LIBUSB3380_VID)
+			continue;
+
+		uint8_t bus = libusb_get_bus_number(usbdev[i]);
+		uint8_t port = libusb_get_port_number(usbdev[i]);
+		uint8_t addr = libusb_get_device_address(usbdev[i]);
+
+		devid = (unsigned)bus * 1000000 + (unsigned)port * 1000 + addr;
+		snprintf(devid_s, sizeof(devid_s), "%d/%d/%d", bus, port, addr);
+
+		XTRXLLS_LOG("USB3", XTRXLL_DEBUG, "usb3380: comparing devices %d/%d/%d <> %d/%d/%d\n",
+					usb_bus, usb_port, usb_addr,
+					bus, port, addr);
+
+		if ((usb_addr == -1 && usb_bus == -1 && usb_port == -1) ||
+				(usb_addr == -1 && usb_bus == -1 && usb_port == port) ||
+				(usb_addr == -1 && usb_bus == bus && usb_port == port) ||
+				(usb_bus == bus && usb_port == port && usb_addr == addr)) {
+			match = usbdev[i];
+			int speed = libusb_get_device_speed(usbdev[i]);
+			switch (speed) {
+				case LIBUSB_SPEED_LOW: usb_speed = 1; break;
+				case LIBUSB_SPEED_FULL: usb_speed = 12; break;
+				case LIBUSB_SPEED_HIGH: usb_speed = 480; break;
+				case LIBUSB_SPEED_SUPER: usb_speed = 5000; break;
+			}
+
+			int_polling = (speed < LIBUSB_SPEED_SUPER);
+			break;
+		}
+	}
+
+	if (match) {
+		res = usb3380_context_init_ex(&ctx, match, uctx);
+	} else {
+		res = -ENODEV;
+	}
+	libusb_free_device_list(usbdev, 1);
+
 	if (res) {
 		XTRXLLS_LOG("USB3", XTRXLL_ERROR, "Unable to allocate USB3380 context: error: %d\n", res);
 		return res;
@@ -526,20 +545,27 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 
 	res = usb3380_init_root_complex(ctx, &cfg);
 	if (res) {
-		if (res == -EAGAIN) {
+		if (res == -EAGAIN && int_polling) {
+			// Hack
+			libusb_reset_device(*(libusb_device_handle**)ctx);
+
 			usb3380_context_free(ctx);
+
+			usleep(10000);
 
 			res = usb3380_context_init(&ctx);
 			if (res) {
-				XTRXLLS_LOG("USB3", XTRXLL_ERROR, "Unable to reinitialize context: error: %d\n", res);
+				XTRXLLS_LOG("USB3", XTRXLL_ERROR,
+							"Unable to reinitialize context: error: %d\n", res);
 				return res;
 			}
 
 			res = usb3380_init_root_complex(ctx, &cfg);
-		}
-		if (res) {
-			XTRXLLS_LOG("USB3", XTRXLL_ERROR, "Unable to intialize USB3380 Root Complex mode: error: %d\n", res);
-			goto usbinit_fail;
+			if (res) {
+				XTRXLLS_LOG("USB3", XTRXLL_ERROR,
+							"Unable to intialize USB3380 Root Complex mode: error: %d\n", res);
+				goto usbinit_fail;
+			}
 		}
 	}
 
@@ -692,8 +718,8 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 		goto failed_pcie_cfg;
 	}
 
-	XTRXLLS_LOG("USB3", XTRXLL_INFO,  "%s: Device `%s` was opened\n",
-			   dev->base.id, device);
+	XTRXLLS_LOG("USB3", XTRXLL_INFO,  "%s: Device `%s` was opened (%d Mbit)\n",
+			   dev->base.id, devid_s, usb_speed);
 	return 0;
 
 failed_unsup_hw:
