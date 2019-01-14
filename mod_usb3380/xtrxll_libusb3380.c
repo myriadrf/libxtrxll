@@ -877,9 +877,9 @@ static int xtrxllusb3380v0_dma_rx_init(struct xtrxll_base_dev* bdev, int chan,
 	if (dev->rx_allocsz < allocsz) {
 		free(dev->rx_queuebuf_ptr);
 		dev->rx_allocsz = allocsz;
-		dev->rx_queuebuf_ptr = (uint8_t*)aligned_alloc(4096, allocsz * (dev->rx_buf_max + 1));
-		if (dev->rx_queuebuf_ptr == 0)
-			return -ENOMEM;
+		res = posix_memalign((void**)&dev->rx_queuebuf_ptr, 4096, allocsz * (dev->rx_buf_max + 1));
+		if (res != 0)
+			return -res;
 
 		dev->rx_discard_rxbuffer = dev->rx_queuebuf_ptr + dev->rx_buf_max * dev->rx_allocsz;
 	}
@@ -1181,6 +1181,7 @@ static int xtrxllusb3380v0_dma_tx_init(struct xtrxll_base_dev* bdev, int chan,
 									   unsigned buf_szs)
 {
 	struct xtrxll_usb3380_dev* dev = (struct xtrxll_usb3380_dev*)bdev;
+	int res;
 
 	if (chan != 0)
 		return -EINVAL;
@@ -1192,12 +1193,11 @@ static int xtrxllusb3380v0_dma_tx_init(struct xtrxll_base_dev* bdev, int chan,
 	if (dev->tx_allocsz < allocsz) {
 		free(dev->tx_queuebuf_ptr);
 		dev->tx_allocsz = allocsz;
-		dev->tx_queuebuf_ptr = aligned_alloc(4096, allocsz * TXDMA_BUFFERS);
-		if (dev->tx_queuebuf_ptr == 0)
-			return -ENOMEM;
+		res = posix_memalign((void**)&dev->tx_queuebuf_ptr, 4096, allocsz * TXDMA_BUFFERS);
+		if (res != 0)
+			return -res;
 	}
 
-	int res;
 	unsigned i;
 	for (i = 0; i < TXDMA_BUFFERS; i++) {
 		int num = (i % 2) ? TXDMA_BUFFERS / 2 + i / 2 : i / 2;
