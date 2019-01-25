@@ -137,6 +137,9 @@ enum xtrxll_sensors {
 	XTRXLL_CFG_NUM_RFIC,
 	XTRXLL_CFG_HAS_GPS,
 	XTRXLL_CFG_HAS_SIM_READER,
+
+	XTRXLL_EXT_SPI_RB,
+
 };
 
 XTRXLL_API int xtrxll_get_sensor(struct xtrxll_dev* dev, unsigned sensorno,
@@ -209,6 +212,8 @@ typedef enum xtrxll_params {
 	XTRXLL_PARAM_GTIME_RESET,
 	XTRXLL_PARAM_GTIME_LOAD_CMD,
 	XTRXLL_PARAM_GTIME_LOAD_TIME,
+
+	XTRXLL_PARAM_EXT_SPI,
 } xtrxll_params_t;
 
 

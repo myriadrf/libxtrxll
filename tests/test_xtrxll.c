@@ -511,6 +511,108 @@ void do_synctest(struct xtrxll_dev *dev, bool internal)
 	}
 }
 
+#if 0
+int octo_lo_spi(struct xtrxll_dev *dev, uint32_t out)
+{
+	int res;
+	res = xtrxll_set_param(dev, XTRXLL_PARAM_EXT_SPI,
+						   0x10000000 | (out & 0x0fffffff));
+	if (res)
+		return res;
+
+	res = xtrxll_set_param(dev, XTRXLL_PARAM_EXT_SPI,
+						   0x20000000 | (out >> 28));
+	if (res)
+		return res;
+
+	usleep(150000);
+	return 0;
+}
+
+int octo_tune(struct xtrxll_dev* dev)
+{
+	uint32_t tregs[] = {
+		0x1041C,
+		0x61300B,
+		0xC00C3A,
+		0x8083CC9,
+		0x102D0428,
+		0x120000E7,
+		0x3500A3F6,
+		0x800025,
+		0x30008B84,
+		0x3,
+		0x80032,
+		0x4AAAAA1,
+		0x200B60,
+
+		0x00C00C3A,
+		0x3500A3F6,
+		0x30008B84 | 0x10,
+		0x00080032,
+		0x04AAAAA1,
+		0x00000B60,
+		0x30008B84,
+
+		0x200B60
+	};
+
+	for (unsigned i = 0; i < sizeof(tregs)/sizeof(tregs[0]); i++) {
+		fprintf(stderr, "=== %08x\n", tregs[i]);
+		int res = octo_lo_spi(dev, tregs[i]);
+		if (res) {
+			return res;
+		}
+		usleep(5000);
+	}
+	return 0;
+}
+#endif
+
+
+void do_octotest(struct xtrxll_dev *dev)
+{
+	int res;
+	int oval;
+
+	// Set
+	// gpio_spi_sck, gpio_spi_sen, gpio_spi_mosi,
+
+	res = xtrxll_set_param(dev, XTRXLL_PARAM_GPIO_FUNC, (1 << 20) | (0 << 18) | (1 << 16));
+	if (res)
+		return;
+
+	res = xtrxll_set_param(dev, XTRXLL_PARAM_GPIO_DIR, 0);
+	if (res)
+		return;
+
+	res = xtrxll_set_param(dev, XTRXLL_PARAM_EXT_SPI, 0x80000000);
+	if (res)
+		return;
+
+	usleep(20000);
+
+	res = xtrxll_get_sensor(dev, XTRXLL_EXT_SPI_RB, &oval);
+	if (res)
+		return;
+
+	printf("GOT: %08x\n", oval);
+
+
+	res = xtrxll_set_param(dev, XTRXLL_PARAM_EXT_SPI, 0x000001ff);
+	if (res)
+		return;
+
+	//octo_tune(dev);
+	sleep(100);
+
+	printf("SHUTDOWN\n");
+
+	res = xtrxll_set_param(dev, XTRXLL_PARAM_EXT_SPI, 0x00000000);
+	if (res)
+		return;
+}
+
 int main(int argc, char** argv)
 {
 	struct xtrxll_dev *dev;
@@ -547,6 +649,7 @@ int main(int argc, char** argv)
 	int vio = -1;
 	int ledtest = 0;
 	int synctest = 0;
+	int octotest = 0;
 
 	pthread_t out_thread, in_thread;
 #ifdef __linux
@@ -558,8 +661,11 @@ int main(int argc, char** argv)
 	sem_init(&g_in_buff_available, 0, 0);
 	sem_init(&g_in_buff_ready, 0, 0);
 
-	while ((opt = getopt(argc, argv, "YdF:fU:C:Z:21A:a:oD:PRT:r:m:vO:I:l:p:SV:L")) != -1) {
+	while ((opt = getopt(argc, argv, "EYdF:fU:C:Z:21A:a:oD:PRT:r:m:vO:I:l:p:SV:L")) != -1) {
 		switch (opt) {
+		case 'E':
+			octotest = 1;
+			break;
 		case 'Y':
 			synctest = 1;
 			break;
@@ -701,6 +807,10 @@ int main(int argc, char** argv)
 
 	if (synctest) {
 		do_synctest(dev, synctest == 1);
+	}
+
+	if (octotest) {
+		do_octotest(dev);
 	}
 
 	if (lf) {

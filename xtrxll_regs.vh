@@ -40,6 +40,8 @@ localparam GP_PORT_WR_GPIO_CS       = 27;
 
 localparam GP_PORT_WR_GLOBCMDR0     = 28;
 localparam GP_PORT_WR_GLOBCMDR1     = 29;
+localparam GP_PORT_WR_GPIO_SPI      = 30;
+
 
 //RD
 localparam GP_PORT_RD_SPI_LMS7_0  = 0;
@@ -70,7 +72,7 @@ localparam GP_PORT_RD_MCU_DEBUG   = 19;
 localparam GP_PORT_RD_REF_OSC     = 20;
 localparam GP_PORT_RD_RXIQ_MISS   = 21;
 localparam GP_PORT_RD_RXIQ_ODD    = 22;
-localparam GP_PORT_RD_RXIQ_BI_BQ  = 23;
+localparam GP_PORT_RD_GPIO_SPI    = 23;
 
 localparam GP_PORT_RD_USB_RB      = 24;
 localparam GP_PORT_RD_RXIQ_PERIOD = 25;

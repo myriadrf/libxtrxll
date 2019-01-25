@@ -616,6 +616,12 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 	case XTRXLL_FE_CTRL: *outval = intr->rfic_ctrl; return 0;
 	case XTRXLL_EXT_CLK: *outval = intr->ext_clk; return 0;
 
+	case XTRXLL_EXT_SPI_RB:
+		res = dev->selfops->reg_in(dev->self, UL_GP_ADDR + GP_PORT_RD_GPIO_SPI,
+								   &tmp);
+		*outval = (int)tmp;
+		return res;
+
 	default:
 		return -EINVAL;
 	}
@@ -1079,6 +1085,9 @@ static int xtrvxllv0_set_param(struct xtrxll_base_dev* dev, unsigned paramno,
 		const struct xtrxll_gtime_time *tcmd = (const struct xtrxll_gtime_time *)param;
 		return xtrvxllv0_set_gtime(dev, tcmd);
 	}
+	case XTRXLL_PARAM_EXT_SPI:
+		return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_GPIO_SPI,
+									 param);
 	default:
 		return -EINVAL;
 	}
