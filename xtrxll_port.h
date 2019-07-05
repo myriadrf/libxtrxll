@@ -23,7 +23,7 @@
 
 /** @file xtrx_port.h
  *
- * Portability layer across differrent platform and OSes
+ * Portability layer across different platform and OSes
  */
 
 #ifdef _MSC_VER
