@@ -590,7 +590,7 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 			res = usb3380_init_root_complex(ctx, &cfg);
 			if (res) {
 				XTRXLLS_LOG("USB3", XTRXLL_ERROR,
-							"Unable to intialize USB3380 Root Complex mode: error: %d\n", res);
+							"Unable to initialize USB3380 Root Complex mode: error: %d\n", res);
 				goto usbinit_fail;
 			}
 		}
