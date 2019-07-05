@@ -1002,7 +1002,7 @@ static void xtrxllusb3380v0_dma_rx_gpep_cb(const struct libusb3380_qgpep* gpep,
 	dev->rx_gpep_buffer_off[ep_idx] = 0;
 
 	if (!dev->rx_stop) {
-		// If there's at least one available buffer, decrement availablity
+		// If there's at least one available buffer, decrement availability
 		// counter and issue next gpep read commad
 		unsigned available;
 		do {
