@@ -1125,7 +1125,7 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 				return -EAGAIN;
 		}
 
-		// TODO calculate this size based on pkt arraival time
+		// TODO calculate this size based on pkt arrrival time
 		ts.tv_nsec += ((timeout_ms > 0 && timeout_ms < 50) ? timeout_ms : 50 ) * 1000 * 1000;
 		while (ts.tv_nsec > 1000 * 1000 * 1000) {
 			ts.tv_nsec -= 1000 * 1000 * 1000;
