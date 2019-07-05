@@ -613,7 +613,7 @@ int xtrxllpciebase_dma_start(struct xtrxll_base_pcie_dma* dev, int chan,
 		dev->rx_running = true;
 	}
 
-	/* Put RX FE in reset state when we stop transmition. We need to do it
+	/* Put RX FE in reset state when we stop transmission. We need to do it
    * separately due to implimentation */
 	if (rxfe == XTRXLL_FE_STOP) {
 		res = dev->base.selfops->reg_out(dev->base.self, UL_GP_ADDR + GP_PORT_WR_RXTXDMA,
