@@ -57,7 +57,7 @@ void xtrxll_log_initialize(FILE* logfile);
 void xtrxll_set_loglevel(enum xtrxll_loglevel l);
 enum xtrxll_loglevel xtrxll_get_loglevel(void);
 
-typedef void (*logfunc_t)(int sevirity,
+typedef void (*logfunc_t)(int severity,
 						  const struct tm* stm,
 						  int nsec,
 						  const char sybsystem[4],
