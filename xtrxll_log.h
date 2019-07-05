@@ -40,13 +40,13 @@ enum xtrxll_loglevel {
 extern enum xtrxll_loglevel s_loglevel;
 
 void xtrxll_log(enum xtrxll_loglevel l,
-				const char sybsystem[4],
+				const char subsystem[4],
 				const char* function,
 				const char* file,
 				int line,
 				const char* fmt, ...)  __attribute__ ((format (printf, 6, 7)));
 void xtrxll_vlog(enum xtrxll_loglevel l,
-				 const char sybsystem[4],
+				 const char subsystem[4],
 				 const char* function,
 				 const char* file,
 				 int line,
@@ -60,7 +60,7 @@ enum xtrxll_loglevel xtrxll_get_loglevel(void);
 typedef void (*logfunc_t)(int severity,
 						  const struct tm* stm,
 						  int nsec,
-						  const char sybsystem[4],
+						  const char subsystem[4],
 						  const char* function,
 						  const char* file,
 						  int function_lno,
