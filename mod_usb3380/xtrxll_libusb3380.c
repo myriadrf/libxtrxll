@@ -1003,7 +1003,7 @@ static void xtrxllusb3380v0_dma_rx_gpep_cb(const struct libusb3380_qgpep* gpep,
 
 	if (!dev->rx_stop) {
 		// If there's at least one available buffer, decrement availability
-		// counter and issue next gpep read commad
+		// counter and issue next gpep read command
 		unsigned available;
 		do {
 			available = __atomic_load_n(&dev->rx_buf_available, __ATOMIC_SEQ_CST);
