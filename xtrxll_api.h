@@ -214,6 +214,8 @@ typedef enum xtrxll_params {
 	XTRXLL_PARAM_GTIME_LOAD_TIME,
 
 	XTRXLL_PARAM_EXT_SPI,
+
+	XTRXLL_PARAM_CURPPS_SETTIME,
 } xtrxll_params_t;
 
 

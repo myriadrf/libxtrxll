@@ -508,7 +508,7 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 		dual_ep = true;
 	}
 
-	bool dual_ep_tx = true;
+	bool dual_ep_tx = false;
 	const char* env_tx_dual_ep = getenv("XTRX_USB3380_TXDUAL_GPEP");
 	if (env_tx_dual_ep) {
 		dual_ep_tx = (atoi(env_tx_dual_ep) > 0) ? true : false;
@@ -714,27 +714,8 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 	dev->tx_fly_buffers = 0;
 	dev->tx_stop = false;
 
-	res = xtrxll_base_dev_init(&dev->base, xtrxllusb3380v0_init(XTRXLL_ABI_VERSION), dev->pcie_devname);
-	if (res) {
-		goto failed_unsup_hw;
-	}
-
-	res = pcieusb3380v0_reg_out(dev, UL_GP_ADDR + GP_PORT_WR_INT_PCIE,
-								(1U << INT_PCIE_E_FLAG) |
-								((dev->rx_dma_flow_ctrl ? 0 : 1U) << 24) | /* disable ovf ctrl on RX path */
-								(1 << INT_PCIE_I_FLAG) | (1 << INT_1PPS) |
-								(1 << INT_RFIC0_SPI) | (1 << INT_I2C));
-	if (res) {
-		goto failed_pcie_cfg;
-	}
-
 	uint32_t dummy;
 	res = pcieusb3380v0_reg_in(dev, UL_GP_ADDR + GP_PORT_RD_INTERRUPTS, &dummy);
-	if (res) {
-		goto failed_pcie_cfg;
-	}
-
-	res = xtrxllpciebase_dma_start(&dev->pcie, 0, NULL);
 	if (res) {
 		goto failed_pcie_cfg;
 	}
@@ -746,6 +727,25 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 	}
 
 	res = usb3380_msi_in_post(dev->mgr, TO_IRQ_POLL, xtrxllusb3380v0_on_msi_cb, dev);
+	if (res) {
+		goto failed_pcie_cfg;
+	}
+
+	res = pcieusb3380v0_reg_out(dev, UL_GP_ADDR + GP_PORT_WR_INT_PCIE,
+								(1U << INT_PCIE_E_FLAG) |
+								((dev->rx_dma_flow_ctrl ? 0 : 1U) << 24) | /* disable ovf ctrl on RX path */
+								(1 << INT_PCIE_I_FLAG) | (1 << INT_1PPS) |
+								(1 << INT_RFIC0_SPI) | (1 << INT_I2C));
+	if (res) {
+		goto failed_pcie_cfg;
+	}
+
+	res = xtrxll_base_dev_init(&dev->base, xtrxllusb3380v0_init(XTRXLL_ABI_VERSION), dev->pcie_devname);
+	if (res) {
+		goto failed_unsup_hw;
+	}
+
+	res = xtrxllpciebase_dma_start(&dev->pcie, 0, NULL);
 	if (res) {
 		goto failed_pcie_cfg;
 	}

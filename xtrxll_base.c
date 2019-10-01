@@ -48,6 +48,7 @@ enum xtrx_i2c_lut {
 enum fwids {
 	FWID_XTRX_R3 = 0,
 	FWID_XTRX_R4 = 4,
+	FWID_XTRX_R5 = 5,
 };
 
 struct internal_base_state {
@@ -56,6 +57,8 @@ struct internal_base_state {
 
 	uint8_t rfic_ctrl;
 	uint8_t ext_clk;
+
+	uint8_t rev5;
 
 	uint8_t gps_state;
 	uint8_t gtime_state;
@@ -101,7 +104,7 @@ static int ltc2606_set_cur(struct xtrxll_base_dev* dev, unsigned val)
 {
 	uint32_t cmd = (0x30) | (((val >> 8) & 0xff) << 8) | ((val & 0xff) << 16);
 	return dev->selfops->i2c_cmd(dev->self,
-								 MAKE_I2C_CMD(0, 0, 3, XTRX_I2C_TMP, cmd), NULL);
+								 MAKE_I2C_CMD(0, 0, 3, XTRX_I2C_DAC, cmd), NULL);
 }
 
 static int mcp4725_set_cur(struct xtrxll_base_dev* dev, unsigned val)
@@ -115,6 +118,19 @@ static int mcp4725_get_cur(struct xtrxll_base_dev* dev, uint32_t* oval)
 {
 	return dev->selfops->i2c_cmd(dev->self,
 								 MAKE_I2C_CMD(1, 3, 0, XTRX_I2C_DAC, 0), oval);
+}
+
+static int pdac_set_reg(struct xtrxll_base_dev* dev, uint8_t reg, uint16_t val)
+{
+	uint32_t cmd = reg | (((val >> 8) & 0xff) << 8) | ((val & 0xff) << 16);
+	return dev->selfops->i2c_cmd(dev->self,
+								 MAKE_I2C_CMD(0, 0, 3, XTRX_I2C_DAC, cmd), NULL);
+}
+
+static int pdac_get_reg(struct xtrxll_base_dev* dev, uint8_t reg, uint32_t* oval)
+{
+	return dev->selfops->i2c_cmd(dev->self,
+								 MAKE_I2C_CMD(1, 1, 1, XTRX_I2C_DAC, reg), oval);
 }
 
 
@@ -483,6 +499,9 @@ static int _xtrxr3_board_combctrl(struct xtrxll_base_dev* dev)
 	cmd |= (1<<GP_PORT_XTRX_ENBPVIO_N);
 	cmd |= (1<<GP_PORT_XTRX_ENBP3V3_N);
 
+	if (intr->rev5)
+		cmd |= (1<< GP_PORT_XTRX_ALTI2CLUT);
+
 	if (intr->ext_clk == XTRXLL_CLK_EXT)
 		cmd |= (1<<GP_PORT_XTRX_EXT_CLK) | (1<<GP_PORT_XTRX_PD_TCXO);
 	else if(intr->ext_clk == XTRXLL_CLK_EXT_NOPD)
@@ -494,6 +513,45 @@ static int _xtrxr3_board_combctrl(struct xtrxll_base_dev* dev)
 	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: RFIC_GPIO 0x%06x\n",
 				dev->id, cmd);
 	return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_LMS_CTRL, cmd);
+}
+
+static int xtrvxllv0_set_osc_dac(struct xtrxll_base_dev* dev, unsigned val)
+{
+	if (val > 65535)
+		val = 65535;
+
+	if (GET_FWID(dev->hwid) == FWID_XTRX_R5)
+		return pdac_set_reg(dev, 8, val);
+	else if (GET_FWID(dev->hwid) == FWID_XTRX_R4)
+		return mcp4725_set_cur(dev, val);
+
+	return ltc2606_set_cur(dev, val);
+}
+
+static int xtrvxllv0_get_osc_dac(struct xtrxll_base_dev* dev, int* outval)
+{
+	uint32_t tmp;
+	int res;
+	if (GET_FWID(dev->hwid) == FWID_XTRX_R5) {
+		res = pdac_get_reg(dev, 8, &tmp);
+
+		if (res)
+			return res;
+
+		XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: DAC %08x\n", dev->id, tmp);
+
+		tmp &= 0xffff;
+		*outval = tmp;
+
+	} else if (GET_FWID(dev->hwid) == FWID_XTRX_R4) {
+		res = mcp4725_get_cur(dev->self, &tmp);
+		if (res)
+			return res;
+		*outval = ((tmp) << 8) >> 16;
+	} else {
+		*outval = -1;
+	}
+	return 0;
 }
 
 static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, int* outval)
@@ -575,11 +633,7 @@ static int xtrvxllv0_get_sensor(struct xtrxll_base_dev* dev, unsigned sensorno, 
 		*outval = (int)dev->hwid;
 		return 0;
 	case XTRXLL_DAC_REG:
-		res = mcp4725_get_cur(dev->self, &tmp);
-		if (res)
-			return res;
-		*outval = ((tmp) << 8) >> 16;
-		return 0;
+		return xtrvxllv0_get_osc_dac(dev, outval);
 
 	case XTRXLL_GTIME_SECFRAC:
 		res = dev->selfops->reg_in_n(dev->self, UL_GP_ADDR + GP_PORT_RD_GTIME_SEC,
@@ -811,16 +865,6 @@ static int xtrvxllv0_mem_rb32(struct xtrxll_base_dev* dev, uint32_t xtrx_addr,
 	return (int)mwords;
 }
 
-static int xtrvxllv0_set_osc_dac(struct xtrxll_base_dev* dev, unsigned val)
-{
-	if (val > 65535)
-		val = 65535;
-
-	if (GET_FWID(dev->hwid) == FWID_XTRX_R4)
-		return mcp4725_set_cur(dev, val);
-
-	return ltc2606_set_cur(dev, val);
-}
 
 #define TIMECMD_DATA_MASK 0x0fffffff
 #define TIMECMD_OFF       28
@@ -830,7 +874,7 @@ localparam PPS_CMP_COUNTER = 1;
 localparam PPS_OFF         = 2;
 localparam PPS_GEN_TMLOW   = 3;
 localparam PPS_GEN_TMHI    = 4;
-
+localparam PPS_LOC_UPHI    = 5;
 
 localparam PPS_CFG_OSC_PPS_EXT   = 0;
 localparam PPS_CFG_OSC_PPS_EDGE  = 1;
@@ -840,6 +884,7 @@ localparam PPS_CFG_FWPPS         = 4;
 localparam PPS_CFG_ISOG_RESET    = 5;
 localparam PPS_CFG_GLOB_RESET    = 6;
 localparam PPS_CFG_TIME_RESET    = 7;
+localparam PPS_CFG_ISOFW_RCV_DIS = 8;
 
 static int xtrx_update_timecfg(struct xtrxll_base_dev* dev)
 {
@@ -853,6 +898,8 @@ static int xtrx_update_timecfg(struct xtrxll_base_dev* dev)
 		config |= 1 << PPS_CFG_TIME_PPS_EXT;
 	if (intr->gtime_state != XTRXLL_GTIME_EXT_PPS) {
 		config |= 1 << PPS_CFG_FWPPS;
+	} else {
+		config |= 1 << PPS_CFG_ISOFW_RCV_DIS;
 	}
 	if (intr->gtime_state == XTRXLL_GTIME_DISABLE) {
 		config |= 1 << PPS_CFG_GLOB_RESET;
@@ -862,6 +909,8 @@ static int xtrx_update_timecfg(struct xtrxll_base_dev* dev)
 	if (intr->isopps_state == XTRXLL_GISO_DISABLE) {
 		config |= 1 << PPS_CFG_ISOG_RESET;
 	}
+
+
 
 	XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: TIME CTRL %06x\n", dev->id, config);
 
@@ -1065,6 +1114,17 @@ static int xtrvxllv0_set_param(struct xtrxll_base_dev* dev, unsigned paramno,
 		return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_PPS_CMD,
 									(PPS_GEN_TMHI << TIMECMD_OFF) | (param >> TIMECMD_OFF));
 	}
+	case XTRXLL_PARAM_CURPPS_SETTIME:
+	{
+		int res;
+		res = dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_PPS_CMD,
+									(PPS_GEN_TMLOW << TIMECMD_OFF) | (TIMECMD_DATA_MASK & param));
+		if (res)
+			return res;
+
+		return dev->selfops->reg_out(dev->self, UL_GP_ADDR + GP_PORT_WR_PPS_CMD,
+									(PPS_LOC_UPHI << TIMECMD_OFF) | (param >> TIMECMD_OFF));
+	}
 	case XTRXLL_PARAM_GTIME_RESET:
 	{
 		// Reset is the best way for the check
@@ -1125,12 +1185,54 @@ int xtrxll_base_dev_init(struct xtrxll_base_dev* dev,
 	if (res)
 		return res;
 
+	uint32_t oval;
+
 	switch (GET_FWID(dev->hwid)) {
 	case FWID_XTRX_R3:
 		XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: XTRX Rev3 (%08x)\n", dev->id, dev->hwid);
 		return 0;
 	case FWID_XTRX_R4:
-		XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: XTRX Rev4 (%08x)\n", dev->id, dev->hwid);
+		res = _xtrxr3_board_combctrl(dev);
+		if (res)
+			return res;
+
+		// Detect Rev4/Rev5 by accessing DAC
+		res = lp8758_en(dev, 0, 1);
+		if (res)
+			return res;
+
+		// Wait for power ramp up
+		usleep(10000);
+
+		res = mcp4725_get_cur(dev, &oval);
+		if (res)
+			return res;
+
+		if (oval == (uint32_t)-1) {
+			((struct internal_base_state*)dev->internal_state)->rev5 = 1;
+			res = _xtrxr3_board_combctrl(dev);
+			if (res)
+				return res;
+
+			res = pdac_get_reg(dev, 4, &oval);
+			if (res)
+				return res;
+
+			if (oval == (uint32_t)-1) {
+				XTRXLLS_LOG("CTRL", XTRXLL_ERROR, "%s: XTRX Rev4/5 (%08x) TCXO DAC FAIL!!!", dev->id, dev->hwid);
+				return 0;
+			}
+
+			res = pdac_set_reg(dev, 4, 0x0101);
+			if (res)
+				return res;
+
+			XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: XTRX Rev5 (%08x)\n", dev->id, dev->hwid);
+
+			dev->hwid = (dev->hwid & 0xffffff) | (FWID_XTRX_R5 << 24);
+		} else {
+			XTRXLLS_LOG("CTRL", XTRXLL_INFO, "%s: XTRX Rev4 (%08x)\n", dev->id, dev->hwid);
+		}
 		return 0;
 	}
 

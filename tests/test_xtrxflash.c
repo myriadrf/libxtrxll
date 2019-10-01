@@ -24,7 +24,101 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <endian.h>
 
+int find_devid(const uint32_t* mem, unsigned len, uint32_t* devid)
+{
+	int res = -1;
+
+	//Flush untill FFFFFF
+	enum {
+		ST_SKIP,
+		ST_BUS_WIDTH,
+		ST_SKIP2,
+		ST_SYNC,
+		ST_CMD,
+		ST_VALUE,
+		ST_VALUE_IDX,
+	} state = ST_SKIP;
+
+	uint16_t pt = 0;
+	unsigned pcount = 0;
+	uint32_t word;
+
+	unsigned ptr = 0;
+	for (; ptr < len; ptr++) {
+		word = be32toh(mem[ptr]);
+
+		switch (state) {
+		case ST_SKIP:
+			if (word == 0xffffffff)
+				continue;
+			if (word == 0x000000bb) {
+				state = ST_BUS_WIDTH;
+				continue;
+			}
+			goto stream_error;
+		case ST_BUS_WIDTH:
+			if (word == 0x11220044) {
+				state = ST_SKIP2;
+				continue;
+			}
+			goto stream_error;
+		case ST_SKIP2:
+			if (word == 0xffffffff)
+				continue;
+			if (word == 0xAA995566) {
+				state = ST_SYNC;
+				continue;
+			}
+			goto stream_error;
+		case ST_SYNC:
+			if (word == 0x20000000) {
+				state = ST_CMD;
+				continue;
+			}
+			goto stream_error;
+		case ST_CMD:
+			if (word == 0x20000000) {
+				continue;
+			}
+			if (word >> 24 == 0x30) {
+				pt = (word >> 8) & 0xffff;
+				pcount = word & 0xff;
+
+				if (pcount == 0) {
+					// fprintf(stderr, "PKT: %08x\n", word);
+				} else {
+					if (pt == 0x0180) {
+						state = ST_VALUE_IDX;
+					} else {
+						state = ST_VALUE;
+					}
+				}
+				continue;
+			}
+			goto stream_error;
+		case ST_VALUE:
+			--pcount;
+			// fprintf(stderr, "PKT: %04x[%d]=%08x\n", pt, pcount, word);
+			if (pcount == 0)
+				state = ST_CMD;
+			continue;
+		case ST_VALUE_IDX:
+			if (pcount != 1)
+				goto stream_error;
+
+			*devid = word;
+			return 0;
+		}
+	}
+	return -ENOENT;
+
+stream_error:
+	printf("Can't parse stream word %08x at %x offset (state=%d)\n",
+		   word, ptr, state);
+	return res;
+}
 int main(int argc, char** argv)
 {
 	struct xtrxll_dev *odev;
@@ -44,11 +138,12 @@ int main(int argc, char** argv)
 	int memdump = 0;
 	int bitformat = 0;
 	int res;
+	int force = 0;
 	struct xtrxll_base_dev *dev;
 	unsigned vio_program = 2700;
 	unsigned vio_read = 2300;
 
-	while ((opt = getopt(argc, argv, "d:o:r:s:l:iO:S:w:neDIV:v:")) != -1) {
+	while ((opt = getopt(argc, argv, "d:o:r:s:l:iO:S:w:neDIV:v:F")) != -1) {
 		switch (opt) {
 		case 'v':
 			vio_read = atoi(optarg);
@@ -94,6 +189,9 @@ int main(int argc, char** argv)
 			break;
 		case 'I':
 			bitformat = 1;
+			break;
+		case 'F':
+			force = 1;
 			break;
 		default: /* '?' */
 			fprintf(stderr, "Usage: %s [-d device] [-r out_filename] [-o read_flash_off] [-s read_file_size] [-w in_filename] [-O write_flash_off] [-S write_file_size] [-i] [-n] [-l loglevel]\n",
@@ -153,6 +251,7 @@ int main(int argc, char** argv)
 			   flash_id, capacity, str);
 	}
 
+	uint32_t flashed_id = 0;
 	if (read_filename) {
 		char *mem = (char*)malloc(read_file_size + 4);
 		if (mem == NULL)
@@ -176,6 +275,30 @@ int main(int argc, char** argv)
 			goto falied_upl;
 
 		fprintf(stderr, "Data has been read successfully (%d bytes)\n", read_file_size);
+	}
+
+	if (show_info || write_filename) {
+		uint32_t fhead[1024];
+		res = xtrxll_flash_to_host(dev, 0,
+								   sizeof(fhead), (char*)fhead);
+		if (res)
+			goto falied_upl;
+
+		res = find_devid(fhead,
+						 sizeof(fhead) / sizeof(uint32_t), &flashed_id);
+		if (res) {
+			// check if BIT file was written without header skip
+			res = find_devid(fhead + 30,
+							 (sizeof(fhead) / sizeof(uint32_t)) - 30,
+							 &flashed_id);
+		}
+	}
+	if (show_info) {
+		const char* device_str =
+				(flashed_id == 0x0362d093) ? "XTRX CS  (Artix7-35T)" :
+				(flashed_id == 0x0362c093) ? "XTRX PRO (Artix7-50T)" :
+											 "------<unknown>------";
+		printf("%s  [DEVID: %08x]\n", device_str, flashed_id);
 	}
 
 	if (write_filename) {
@@ -225,6 +348,21 @@ int main(int argc, char** argv)
 				free(mem);
 				goto falied_upl;
 			}
+
+			uint32_t file_id;
+			res = find_devid((uint32_t*)(void*)(mem + write_flash_off),
+							 block_size / sizeof(uint32_t), &file_id);
+			if (res)
+				goto falied_upl;
+
+			if ((flashed_id != file_id) && !force) {
+				fprintf(stderr, "FPGA DEVID mismatch of flashed one and in the file provided:\n"
+						"    FLASHED DEVID: %08x\n"
+						"    FILE    DEVID: %08x\n",
+						flashed_id, file_id);
+				return 2;
+			}
+
 		} else {
 			res = errno;
 			fprintf(stderr, "Unable to open file `%s`", strerror(res));
@@ -277,9 +415,10 @@ int main(int argc, char** argv)
 		free(mem);
 	}
 
-	res = 0;
+	return 0;
 
 falied_upl:
+	fprintf(stderr, "Error: %d\n", res);
 	xtrxll_set_param(odev, XTRXLL_PARAM_PWR_CTRL, PWR_CTRL_PDOWN);
 	xtrxll_close(odev);
 falied_open:

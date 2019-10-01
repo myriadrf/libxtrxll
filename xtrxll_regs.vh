@@ -141,6 +141,10 @@ localparam GP_PORT_XTRX_ENBPVIO_N     = 8;
 localparam GP_PORT_XTRX_ENBP3V3_N     = 9;
 localparam GP_PORT_XTRX_EXT_CLK       = 10;
 localparam GP_PORT_XTRX_PD_TCXO       = 11;
+localparam GP_PORT_XTRX_ENGPS         = 12;
+localparam GP_PORT_XTRX_VCCSEL        = 13;
+localparam GP_PORT_XTRX_ENSMDIG       = 14;
+localparam GP_PORT_XTRX_ALTI2CLUT     = 15;
 
 
 // Bits in GP_PORT_RD_SIM_RX / GP_PORT_RD_UART_RX / GP_PORT_RD_SIM_STAT
@@ -235,13 +239,15 @@ localparam INT_SIM_UART_TX  = 6;
 localparam INT_SIM_UART_RX  = 7;
 localparam INT_I2C          = 8;
 localparam INT_NCMD         = 9;
-
-localparam INT_COUNT        = 10;
+localparam INT_DMA_RX_OVF   = 10;
+localparam INT_COUNT        = 11;
 
 
 localparam INT_PCIE_I_FLAG = 15;
 
 localparam INT_PCIE_E_NO_RX_DMA_FLOW = 24;
+localparam INT_PCIE_E_RX_SEP_OVF_INT = 25;
+
 
 localparam INT_PCIE_E_OVRD = 30;
 localparam INT_PCIE_E_FLAG = 31;

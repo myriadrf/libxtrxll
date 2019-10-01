@@ -270,6 +270,10 @@ int xtrxll_flash_to_host(struct xtrxll_base_dev* dev, uint32_t flash_off,
 		uint32_t bsz = (size > 256) ? 256 : size;
 
 		res = flash_read(dev, QIO_QCFR_2, bsz, addr, (uint32_t*)out);
+
+        XTRXLLS_LOG("FLASH", XTRXLL_INFO_LMS, "QSPI Read: addr=%u sz=%d res=%d\n",
+                    addr, bsz, res);
+
 		if (res != bsz / 4)
 			return res;
 
@@ -486,6 +490,10 @@ int xtrxll_flash_from_host(struct xtrxll_base_dev* dev, const char* in,
 		uint32_t bsz = (size > 256) ? 256 : size;
 
 		res = flash_write(dev, QIO_QCPP_0, bsz, addr, (const uint32_t*)in);
+
+        XTRXLLS_LOG("FLASH", XTRXLL_INFO_LMS, "QSPI Write: addr=%u sz=%d res=%d\n",
+                    addr, bsz, res);
+
 		if (res)
 			return res;
 
