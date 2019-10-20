@@ -195,10 +195,10 @@ void do_calibrate_tcxo(struct xtrxll_dev *dev, int range, int whole, int step)
 
 }
 
-int do_tcxo_calibration(struct xtrxll_dev *dev, int* ferr, double fref)
+int do_tcxo_calibration(struct xtrxll_dev *dev, int* ferr, double fref, int dac_granularity)
 {
 	//const int D[2] = { 1024 + 256, 3072 - 256 };
-	const int D[2] = { 0 + 1024, 65535 - 1024 };
+	const int D[2] = { (0 + 1024)/dac_granularity, (65535 - 1024)/dac_granularity };
 	int res;
 	int j, i;
 	int osc[3];
@@ -207,9 +207,9 @@ int do_tcxo_calibration(struct xtrxll_dev *dev, int* ferr, double fref)
 	res = xtrxll_get_sensor(dev, XTRXLL_ONEPPS_CAPTURED, &j);
 
 	for (i = 0; i < 2; i++) {
-		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, D[i]);
+		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, D[i]*dac_granularity);
 		usleep(1000);
-		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, D[i]);
+		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, D[i]*dac_granularity);
 
 		res = xtrxll_get_sensor(dev, XTRXLL_ONEPPS_CAPTURED, &j);
 		res = xtrxll_get_sensor(dev, XTRXLL_ONEPPS_CAPTURED, &j);
@@ -223,17 +223,18 @@ int do_tcxo_calibration(struct xtrxll_dev *dev, int* ferr, double fref)
 			res = xtrxll_get_sensor(dev, XTRXLL_OSC_LATCHED, &osc_q[i]);
 		}
 
-		printf("%d => %d %d\n", D[i], osc[i], osc_q[i]);
+		printf("%d (%d raw) => %d %d\n", D[i]*dac_granularity, D[i], osc[i], osc_q[i]);
 	}
 
 	double k = ((double)(osc[1] + osc_q[1] - osc[0] - osc_q[0])) / (D[1] - D[0]);
 	double Q = D[0] + (2 * fref - osc[0] - osc_q[0]) / k;
+	int Q_int = (int)(Q + 0.5);
 
-	printf("k=%.3f Q=%d\n", k / 2, (int)(Q + 0.5));
+	printf("k=%.3f Q=%d\n", k / 2, Q_int);
 
-	xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, Q + 0.5);
+	xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, Q_int*dac_granularity);
 	usleep(1000);
-	xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, Q + 0.5);
+	xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, Q_int*dac_granularity);
 	res = xtrxll_get_sensor(dev, XTRXLL_ONEPPS_CAPTURED, &j);
 	res = xtrxll_get_sensor(dev, XTRXLL_ONEPPS_CAPTURED, &j);
 	if (res == 0) {
@@ -243,15 +244,19 @@ int do_tcxo_calibration(struct xtrxll_dev *dev, int* ferr, double fref)
 	printf("Linear => %d\n", osc[2]);
 
 	*ferr = (fref - osc[2]);
-	return Q + 0.5;
+	return Q_int*dac_granularity;
 }
 
 void do_test_1pps(struct xtrxll_dev *dev, int initial_dac, double fref)
 {
 	int ini = -1;
 	int err = -1;
+	const int DAC_GRANULARITY = 16; // Minimum DAC step
 
-	ini = do_tcxo_calibration(dev, &err, fref);
+	if (initial_dac < 0) {
+		ini = do_tcxo_calibration(dev, &err, fref, DAC_GRANULARITY);
+		ini = ini/DAC_GRANULARITY;
+	}
 
 
 	int res;
@@ -265,13 +270,11 @@ void do_test_1pps(struct xtrxll_dev *dev, int initial_dac, double fref)
 	const int32_t ORIG_FREQ = fref;
 	const int32_t MAX_ERR   = ORIG_FREQ / 10000; // 100ppm
 
-	uint64_t freq_c = 0;
-	uint64_t freq_c_prev = 0;
+	uint64_t freq_c = 0; // Averaged frequency
 
-	const int     DAC_RANGE = 65536;
-	const int     DAC_WORK_RANGE = 2800;
+	const int     DAC_RANGE = 65536/DAC_GRANULARITY;
+	const int     DAC_WORK_RANGE = 2800/DAC_GRANULARITY;
 	const int64_t VCTXCO_PULL_RANGE = ORIG_FREQ * 36 / 1000000; //36 ppm pullability range
-	//const int Ki =
 
 	int ctrl_prev = 0;
 	int ctrl = 0;
@@ -300,24 +303,25 @@ void do_test_1pps(struct xtrxll_dev *dev, int initial_dac, double fref)
 	const double ke1 = b1/a0;
 	const double ke2 = b2/a0;
 
+	const double meas_ppb = 100;
 
 	if (ini >= 0 && ini < DAC_RANGE) {
-		printf("Bootstrapping to (%d:%d)\n", ini, err);
+		printf("Bootstrapping to %d (%d raw), freq error %d Hz\n", ini*DAC_GRANULARITY, ini, err);
 		e0 = e1 = e2 = err;
 		u0 = u1 = u2 = ini - (DAC_RANGE / 2);
 
 	} else {
+		initial_dac = initial_dac/DAC_GRANULARITY;
 		if (initial_dac < 0 || initial_dac >= DAC_RANGE) {
 			initial_dac = DAC_RANGE / 2;
 		}
 		u0 = u1 = u2 = initial_dac - (DAC_RANGE / 2);
-		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, initial_dac);
+		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, initial_dac*DAC_GRANULARITY);
 		sleep(1);
-		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, initial_dac);
+		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, initial_dac*DAC_GRANULARITY);
 	}
 
 	int settled = 0;
-	const double meas_ppb = 100;
 	time_t start = time(NULL);
 
 	for (;;) {
@@ -337,15 +341,17 @@ void do_test_1pps(struct xtrxll_dev *dev, int initial_dac, double fref)
 			skip_upd = 0;
 			continue;
 		}
-		int fdc = (freq_c_prev >> FILTER_BITS) - osc;
+
+		// Average frequency to get sub-Hz precision but only if the frequency
+		// is no more than 2 Hz from the average.
+		int fdc = (freq_c >> FILTER_BITS) - osc;
 		if (freq_c == 0 || fdc < -2 || fdc > 2) {
 			freq_c = ((uint64_t)osc) << FILTER_BITS;
 		} else {
 			freq_c = freq_c - (freq_c >> FILTER_BITS) + osc;
 		}
-		freq_c_prev = freq_c;
 
-		printf("   C: %.3f\n", (double)freq_c / (1<<FILTER_BITS));
+		printf("   Freq: %.3f Hz\n", (double)freq_c / (1<<FILTER_BITS));
 		int64_t precise_delta = ((uint64_t)ORIG_FREQ << FILTER_BITS) - freq_c;
 
 		//int64_t D = (DAC_RANGE * precise_delta / VCTXCO_PULL_RANGE);
@@ -357,14 +363,20 @@ void do_test_1pps(struct xtrxll_dev *dev, int initial_dac, double fref)
 		e2=e1; e1=e0; e0=e0_t; u2=u1; u1=u0; u0=u0_t;
 		printf(" e0=%f e1=%f e2=%f   u0=%f u1=%f u2=%f\n", e0, e1, e2, u0, u1, u2);
 
-		if (initial) {
-			e2 = e1 = e0;
-		} else if (!settled && (fabs(e0) < ((double)ORIG_FREQ * meas_ppb / 1e+9))
-				   && (fabs(e1) < ((double)ORIG_FREQ * meas_ppb / 1e+9))
-				   && (fabs(e2) < ((double)ORIG_FREQ * meas_ppb / 1e+9)) ) {
+		time_t now = time(NULL);
+		if ((fabs(e0) < ((double)ORIG_FREQ * meas_ppb / 1e+9)) &&
+		    (fabs(e1) < ((double)ORIG_FREQ * meas_ppb / 1e+9)) &&
+		    (fabs(e2) < ((double)ORIG_FREQ * meas_ppb / 1e+9)) ) {
+			if (!settled)
+				start = now;
 			settled = 1;
-			printf("Settled after %d secs\n", (int)(time(NULL) - start));
+		} else {
+			if (settled)
+				start = now;
+			settled = 0;
 		}
+		printf("GPSDO status: %s for %.1f ppb precision for %d sec (current precision %.1f ppb)\n",
+		       settled?"Settled":"Not settled", meas_ppb, (int)(now - start), fabs(e0)/(double)ORIG_FREQ*1e+9);
 
 		ctrl = u0 + 0.5;
 
@@ -380,9 +392,18 @@ void do_test_1pps(struct xtrxll_dev *dev, int initial_dac, double fref)
 		}
 		ctrl_prev = ctrl;
 
-		printf("  DC: %d\n", ctrl);
-		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, (DAC_RANGE / 2) + ctrl);
+		uint32_t dac_value = ((DAC_RANGE / 2) + ctrl) * DAC_GRANULARITY;
+		printf("  DC: %d DAC: %d\n", ctrl, dac_value);
+		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, dac_value);
 		skip_upd = 1;
+
+		// Validate that we've written a correct value, else alarm and exit
+		uint32_t dac_value_real = 0xDEADBEEF;
+		res = xtrxll_get_sensor(dev, XTRXLL_DAC_REG, (int*)&dac_value_real);
+		if (dac_value_real != dac_value) {
+			printf("ERROR: Real DAC %d != requested DAC value %d\n", dac_value_real, dac_value);
+			break;
+		}
 	}
 }
 
