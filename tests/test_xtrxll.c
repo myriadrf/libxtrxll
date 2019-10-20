@@ -613,6 +613,12 @@ void do_octotest(struct xtrxll_dev *dev)
 		return;
 }
 
+void usage(char* cmdname) {
+	printf("Usage:\n"
+	       " %s [-D device] [-P] [-T tempsensor] [-R] [-r fefmt] [-a dac_val] [-o]\n",
+	        cmdname);
+}
+
 int main(int argc, char** argv)
 {
 	struct xtrxll_dev *dev;
@@ -661,7 +667,7 @@ int main(int argc, char** argv)
 	sem_init(&g_in_buff_available, 0, 0);
 	sem_init(&g_in_buff_ready, 0, 0);
 
-	while ((opt = getopt(argc, argv, "EYdF:fU:C:Z:21A:a:oD:PRT:r:m:vO:I:l:p:SV:L")) != -1) {
+	while ((opt = getopt(argc, argv, "EYdF:fU:C:Z:21A:a:oD:PRT:r:m:vO:I:l:p:SV:Lh")) != -1) {
 		switch (opt) {
 		case 'E':
 			octotest = 1;
@@ -748,9 +754,11 @@ int main(int argc, char** argv)
 		case 'V':
 			vio = atoi(optarg);
 			break;
+		case 'h':
+			usage(argv[0]);
+			return 0;
 		default: /* '?' */
-			fprintf(stderr, "Usage: %s [-D device] [-P] [-T tempsensor] [-R] [-r fefmt] [-a dac_val] [-o]\n",
-					argv[0]);
+			usage(argv[0]);
 			exit(EXIT_FAILURE);
 		}
 	}
