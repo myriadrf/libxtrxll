@@ -356,7 +356,7 @@ static int xtrxllpciev0_open(const char* device, unsigned flags,
 	}
 
 	*pdev = &dev->base;
-	XTRXLLS_LOG("PCIE", XTRXLL_INFO,  "%s: Device `%s` was opened\n",
+	XTRXLLS_LOG("PCIE", XTRXLL_INFO,  "%s: Device `%s` has been opened successfully\n",
 			   dev->base.id, device);
 	return 0;
 
@@ -376,7 +376,7 @@ static void xtrxllpciev0_close(struct xtrxll_base_dev* bdev)
 {
 	struct xtrxll_pcie_dev* dev = (struct xtrxll_pcie_dev*)bdev;
 
-	XTRXLLS_LOG("PCIE", XTRXLL_INFO,  "%s: Device closing\n", dev->base.id);
+	XTRXLLS_LOG("PCIE", XTRXLL_INFO,  "%s: Device is closing\n", dev->base.id);
 
 	munmap((void*)dev->mmap_xtrxll_regs, XTRXLL_MMAP_CONFREGS_LEN);
 	munmap((void*)dev->mmap_stat_buf, XTRXLL_MMAP_CONFREGS_LEN);

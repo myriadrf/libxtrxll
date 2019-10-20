@@ -750,7 +750,7 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 		goto failed_pcie_cfg;
 	}
 
-	XTRXLLS_LOG("USB3", XTRXLL_INFO,  "%s: Device `%s` was opened (%d Mbit)\n",
+	XTRXLLS_LOG("USB3", XTRXLL_INFO,  "%s: Device `%s` has been opened successfully (%d Mbit)\n",
 			   dev->base.id, devid_s, usb_speed);
 	return 0;
 
@@ -779,7 +779,7 @@ static void xtrxllusb3380v0_close(struct xtrxll_base_dev* bdev)
 {
 	struct xtrxll_usb3380_dev* dev = (struct xtrxll_usb3380_dev*)bdev;
 
-	XTRXLLS_LOG("USB3", XTRXLL_INFO, "%s: Device closing\n", dev->base.id);
+	XTRXLLS_LOG("USB3", XTRXLL_INFO, "%s: Device is closing\n", dev->base.id);
 
 	usb3380_msi_in_cancel(dev->mgr);
 
