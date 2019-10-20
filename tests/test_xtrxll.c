@@ -352,7 +352,11 @@ void do_test_1pps(struct xtrxll_dev *dev, int initial_dac, double fref)
 		//ctrl = -(D >> FILTER_BITS)/3  + ctrl_prev / 20;
 		//printf("   D: %d (%ld %ld)\n", ctrl, precise_delta, D >> FILTER_BITS);
 
-		e0 = (double)precise_delta / (1<<FILTER_BITS);
+		double e0_t = (double)precise_delta / (1<<FILTER_BITS);
+		double u0_t = -ku1*u1 - ku2*u2 + ke0*e0 + ke1*e1 + ke2*e2;
+		e2=e1; e1=e0; e0=e0_t; u2=u1; u1=u0; u0=u0_t;
+		printf(" e0=%f e1=%f e2=%f   u0=%f u1=%f u2=%f\n", e0, e1, e2, u0, u1, u2);
+
 		if (initial) {
 			e2 = e1 = e0;
 		} else if (!settled && (fabs(e0) < ((double)ORIG_FREQ * meas_ppb / 1e+9))
@@ -362,11 +366,7 @@ void do_test_1pps(struct xtrxll_dev *dev, int initial_dac, double fref)
 			printf("Settled after %d secs\n", (int)(time(NULL) - start));
 		}
 
-		e2=e1; e1=e0; u2=u1; u1=u0;
-		u0 = -ku1*u1 - ku2*u2 + ke0*e0 + ke1*e1 + ke2*e2;
 		ctrl = u0 + 0.5;
-
-		printf(" e0=%f e1=%f e2=%f   u0=%f u1=%f u2=%f\n", e0, e1, e2, u0, u1, u2);
 
 		// Clamp control
 		if (ctrl < -(DAC_RANGE / 2) )
