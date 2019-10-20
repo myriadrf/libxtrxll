@@ -169,6 +169,7 @@ void do_calibrate_tcxo(struct xtrxll_dev *dev, int range, int whole, int step)
 	xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, 0);
 	sleep(1);
 
+	printf("dac,1pps captured,osc latched,temperature\n");
 	for (int i = range; i < whole-range; i+=step) {
 		res = xtrxll_get_sensor(dev, XTRXLL_ONEPPS_CAPTURED, &j);
 		res = xtrxll_get_sensor(dev, XTRXLL_ONEPPS_CAPTURED, &j);
@@ -636,7 +637,13 @@ void do_octotest(struct xtrxll_dev *dev)
 
 void usage(char* cmdname) {
 	printf("Usage:\n"
-	       " %s [-D device] [-P] [-T tempsensor] [-R] [-r fefmt] [-a dac_val] [-o]\n",
+	       " %s [-D device] [-P] [-T tempsensor] [-R] [-r fefmt] [-a dac_val] [-o]\n"
+	       "\n"
+	       "Command line options:\n"
+	       "  -1                Run GPSDO algorithm (also see option -Z). If dac_val is set with option -a, it's used as the start value, otherwise the start value is calculated.\n"
+	       "  -Z                Reference clock frequency for the GPSDO algorithm (see option -1) [default=26000000]"
+	       "  -2                Calibrate TCXO DAC by iterating over all DAC values from dac_start to 65535-dac_start (see option -C) with step 4. Takes 2 sec per step.\n"
+	       "  -C dac_start      Start value for the TCXO DAC calibration (see option -2) [default=0]",
 	        cmdname);
 }
 
@@ -921,7 +928,7 @@ int main(int argc, char** argv)
 
 		uint32_t out = 0xDEADBEEF;
 		res = xtrxll_get_sensor(dev, XTRXLL_DAC_REG, (int*)&out);
-		printf("DAC reg is: %08x\n", out);
+		printf("DAC reg is: 0x%08x (%d)\n", out, out);
 	}
 
 	if (cal_tcxo) {
