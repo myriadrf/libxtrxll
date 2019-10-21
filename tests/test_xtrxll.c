@@ -391,20 +391,26 @@ void do_test_1pps(struct xtrxll_dev *dev, int initial_dac, double fref)
 			freq_c = 0;
 			initial = 0;
 		}
-		ctrl_prev = ctrl;
 
-		uint32_t dac_value = ((DAC_RANGE / 2) + ctrl) * DAC_GRANULARITY;
-		printf("  DC: %d DAC: %d\n", ctrl, dac_value);
-		xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, dac_value);
-		skip_upd = 1;
+		// Only update DAC value if it's actually changed
+		if (ctrl_prev != ctrl) {
+			// We're going to change the frequency now, so we should skip one pps
+			// to avoid bogus frequency calculation
+			skip_upd = 1;
 
-		// Validate that we've written a correct value, else alarm and exit
-		uint32_t dac_value_real = 0xDEADBEEF;
-		res = xtrxll_get_sensor(dev, XTRXLL_DAC_REG, (int*)&dac_value_real);
-		if (dac_value_real != dac_value) {
-			printf("ERROR: Real DAC %d != requested DAC value %d\n", dac_value_real, dac_value);
-			break;
+			uint32_t dac_value = ((DAC_RANGE / 2) + ctrl) * DAC_GRANULARITY;
+			printf("  DC: %d DAC: %d\n", ctrl, dac_value);
+			xtrxll_set_param(dev, XTRXLL_PARAM_REF_DAC, dac_value);
+
+			// Validate that we've written a correct value, else alarm and exit
+			uint32_t dac_value_real = 0xDEADBEEF;
+			res = xtrxll_get_sensor(dev, XTRXLL_DAC_REG, (int*)&dac_value_real);
+			if (dac_value_real != dac_value) {
+				printf("ERROR: Real DAC %d != requested DAC value %d\n", dac_value_real, dac_value);
+				break;
+			}
 		}
+		ctrl_prev = ctrl;
 	}
 }
 
