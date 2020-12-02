@@ -773,7 +773,7 @@ static int xtrvxllv0_issue_timmed_command(struct xtrxll_base_dev* dev,
 	if (res)
 		return res;
 
-	/* we add faked '| (1 << TC_TS_BITS)' to data to detect incorrect word order in 64 bit writting */
+	/* we add faked '| (1 << TC_TS_BITS)' to data to detect incorrect word order in 64 bit writing */
 	//internal_xtrxll_reg_out_dual(dev, GP_PORT_WR_TCMD_D, data | (1 << TC_TS_BITS), (time & TS_WTS_INTERNAL_MASK) | (route << TC_TS_BITS));
 	return 0;
 }

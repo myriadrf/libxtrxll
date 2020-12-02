@@ -26,7 +26,7 @@
 static void s_def_logging(int l,
 						  const struct tm* stm,
 						  int nsec,
-						  const char sybsystem[4],
+						  const char subsystem[4],
 						  const char* function,
 						  const char* file,
 						  int lineno,
@@ -54,7 +54,7 @@ static const char* s_term_name[] =
 void s_def_logging(int l,
 				   const struct tm* stm,
 				   int nsec,
-				   const char sybsystem[4],
+				   const char subsystem[4],
 				   const char* function,
 				   const char* file,
 				   int lineno,
@@ -79,10 +79,10 @@ void s_def_logging(int l,
 	if (s_loglevel > XTRXLL_DEBUG) {
 		sz = snprintf(buf + stsz - 1, sizeof(buf) - stsz, " %s:%d [%4.4s] ",
 					  function, lineno,
-					  sybsystem);
+					  subsystem);
 	} else {
 		sz = snprintf(buf + stsz - 1, sizeof(buf) - stsz, " [%4.4s] ",
-					  sybsystem);
+					  subsystem);
 	}
 	if (sz < 0) {
 		buf[MAX_LOG_LINE - 1] = 0;
@@ -120,7 +120,7 @@ void xtrxll_set_logfunc(logfunc_t function)
 
 
 void xtrxll_log(enum xtrxll_loglevel l,
-				const char sybsystem[4],
+				const char subsystem[4],
 				const char* function,
 				const char *file,
 				int line,
@@ -131,12 +131,12 @@ void xtrxll_log(enum xtrxll_loglevel l,
 
 	va_list ap;
 	va_start(ap, fmt);
-	xtrxll_vlog(l, sybsystem, function, file, line, fmt, ap);
+	xtrxll_vlog(l, subsystem, function, file, line, fmt, ap);
 	va_end(ap);
 }
 
 void xtrxll_vlog(enum xtrxll_loglevel l,
-				 const char sybsystem[4],
+				 const char subsystem[4],
 				 const char* function,
 				 const char *file,
 				 int line,
@@ -149,7 +149,7 @@ void xtrxll_vlog(enum xtrxll_loglevel l,
 	clock_gettime(CLOCK_REALTIME, &tp);
 	const struct tm* stm = xtrxll_localtime(tp.tv_sec);
 
-	s_log_function(l, stm, (int)tp.tv_nsec, sybsystem, function, file, line, fmt, list);
+	s_log_function(l, stm, (int)tp.tv_nsec, subsystem, function, file, line, fmt, list);
 }
 
 

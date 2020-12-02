@@ -785,7 +785,7 @@ static int xtrxllpciev0_set_param(struct xtrxll_base_dev* bdev,
 		int en_b33 = (val != PWR_CTRL_PDOWN) ? 1 : 0;
 		int res = ioctl(dev->fd, 0x12345B, en_b33);
 
-		// Do not disable 3v3 line if GPS is active ouside
+		// Do not disable 3v3 line if GPS is active outside
 		if (val == PWR_CTRL_PDOWN && res == 0) {
 			val = PWR_CTRL_BUSONLY;
 		}

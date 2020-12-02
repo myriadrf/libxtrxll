@@ -590,7 +590,7 @@ static int xtrxllusb3380v0_open(const char* device, unsigned flags,
 			res = usb3380_init_root_complex(ctx, &cfg);
 			if (res) {
 				XTRXLLS_LOG("USB3", XTRXLL_ERROR,
-							"Unable to intialize USB3380 Root Complex mode: error: %d\n", res);
+							"Unable to initialize USB3380 Root Complex mode: error: %d\n", res);
 				goto usbinit_fail;
 			}
 		}
@@ -1002,8 +1002,8 @@ static void xtrxllusb3380v0_dma_rx_gpep_cb(const struct libusb3380_qgpep* gpep,
 	dev->rx_gpep_buffer_off[ep_idx] = 0;
 
 	if (!dev->rx_stop) {
-		// If there's at least one available buffer, decrement availablity
-		// counter and issue next gpep read commad
+		// If there's at least one available buffer, decrement availability
+		// counter and issue next gpep read command
 		unsigned available;
 		do {
 			available = __atomic_load_n(&dev->rx_buf_available, __ATOMIC_SEQ_CST);
@@ -1125,7 +1125,7 @@ static int xtrxllusb3380v0_dma_rx_getnext(struct xtrxll_base_dev* bdev,
 				return -EAGAIN;
 		}
 
-		// TODO calculate this size based on pkt arraival time
+		// TODO calculate this size based on pkt arrrival time
 		ts.tv_nsec += ((timeout_ms > 0 && timeout_ms < 50) ? timeout_ms : 50 ) * 1000 * 1000;
 		while (ts.tv_nsec > 1000 * 1000 * 1000) {
 			ts.tv_nsec -= 1000 * 1000 * 1000;

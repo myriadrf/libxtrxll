@@ -108,7 +108,7 @@ struct xtrxll_ops {
 };
 
 /**
- * @brief wts32_t Wrappable timestamp number for TX/RX smaples
+ * @brief wts32_t Wrappable timestamp number for TX/RX samples
  */
 typedef uint32_t wts32_t;
 

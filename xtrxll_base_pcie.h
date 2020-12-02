@@ -42,7 +42,7 @@ enum txdma_stat {
 	/** TxDMA buffer currently requesting by the DMA core  */
 	TXDMA_BUFNO_TRANS_OFF = 8,
 
-	/** TxDMA buffer that has been transfered into the air */
+	/** TxDMA buffer that has been transferred into the air */
 	TXDMA_BUFNO_CLEARED   = 16,
 
 	/** TxDMA buffer ready for filling */
