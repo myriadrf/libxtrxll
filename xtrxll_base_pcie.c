@@ -273,8 +273,15 @@ int xtrxllpciebase_dmatx_get(struct xtrxll_base_pcie_dma* dev, int chan,
 
 		uint32_t stat_regs[TOTAL] = { ~0U, ~0U, ~0U, ~0U };
 		int res;
-		unsigned cnt = (s_loglevel >= XTRXLL_DEBUG || (bufno == NULL) || diag) ? 4 :
-					   (late) ? 2 : 1;
+		// unsigned cnt = (s_loglevel >= XTRXLL_DEBUG || (bufno == NULL) || diag) ? 4 :
+		// 			   (late) ? 2 : 1;
+		// Workaround for Yocto:
+		// This cnt is to configure the number of REGs to read according to the log level.
+		// 4 is for debugging purpose.
+		// Due to unknown reason, Yocto environment will get into trouble with this assignment.
+		// Hardcode to 4 will help.
+		// Though it will cost slight performance decreasement.
+		unsigned cnt = 4;
 		res = dev->base.selfops->reg_in_n(dev->base.self,
 										  UL_GP_ADDR + GP_PORT_RD_TXDMA_STAT,
 										  stat_regs,
