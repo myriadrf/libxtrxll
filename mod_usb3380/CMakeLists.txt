@@ -15,7 +15,7 @@ if(NOT XTRXLL_STATIC)
     target_link_libraries(xtrxll_libusb3380 xtrxll ${LIBUSB3380_LIBRARIES})
     set_target_properties(xtrxll_libusb3380 PROPERTIES VERSION ${LIBVER} SOVERSION ${MAJOR_VERSION})
 
-    install(TARGETS xtrxll_libusb3380 DESTINATION ${XTRXLL_LIBRARY_DIR})
+    install(TARGETS xtrxll_libusb3380 DESTINATION ${XTRXLL_RUNTIME_DIR})
 else()
     target_link_libraries(xtrxll_libusb3380 ${LIBUSB3380_LIBRARIES})
 endif()

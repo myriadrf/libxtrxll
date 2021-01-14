@@ -14,5 +14,5 @@ if(NOT XTRXLL_STATIC)
     target_link_libraries(xtrxll_pcie xtrxll)
     set_target_properties(xtrxll_pcie PROPERTIES VERSION ${LIBVER} SOVERSION ${MAJOR_VERSION})
 
-    install(TARGETS xtrxll_pcie DESTINATION ${XTRXLL_LIBRARY_DIR})
+    install(TARGETS xtrxll_pcie DESTINATION ${XTRXLL_RUNTIME_DIR})
 endif()

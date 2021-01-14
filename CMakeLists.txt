@@ -51,9 +51,9 @@ else()
 	message(WARNING "Unknown system type is ${CMAKE_SYSTEM_NAME}")
 endif()
 
+set(XTRXLL_RUNTIME_DIR      bin)
 set(XTRXLL_LIBRARY_DIR      lib${LIB_SUFFIX})
 set(XTRXLL_INCLUDE_DIR      include)
-set(XTRXLL_UTILS_DIR        ${XTRXLL_LIBRARY_DIR}/xtrxll)
 
 CONFIGURE_FILE(
 	${CMAKE_CURRENT_SOURCE_DIR}/libxtrxll.pc.in
@@ -130,7 +130,7 @@ set_target_properties(xtrxll PROPERTIES VERSION ${LIBVER} SOVERSION ${MAJOR_VERS
 
 
 add_subdirectory(tests)
-install(TARGETS xtrxll DESTINATION ${XTRXLL_LIBRARY_DIR})
+install(TARGETS xtrxll DESTINATION ${XTRXLL_RUNTIME_DIR})
 
 
 ########################################################################
