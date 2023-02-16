@@ -53,7 +53,7 @@ endif()
 
 set(XTRXLL_LIBRARY_DIR      lib${LIB_SUFFIX})
 set(XTRXLL_INCLUDE_DIR      include)
-set(XTRXLL_UTILS_DIR        ${XTRXLL_LIBRARY_DIR}/xtrxll)
+set(XTRXLL_UTILS_DIR        bin)
 
 CONFIGURE_FILE(
 	${CMAKE_CURRENT_SOURCE_DIR}/libxtrxll.pc.in
